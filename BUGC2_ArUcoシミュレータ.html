@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BUGC2 ArUco レース シミュレータ / 本番モニタ</title>
+<style>
+  :root{
+    --bg:#fff; --panel:#f6f7f9; --line:#d8dce3; --tx:#1c2230; --tx2:#6b7484;
+    --acc:#1f6feb; --ok:#12894f; --warn:#b06d00; --bad:#c0392b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--tx);font-size:13px;overflow:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
+  #app{display:grid;grid-template-columns:1fr 440px;grid-template-rows:100%;height:100%;overflow:hidden}
+  @media (max-width:1100px){#app{grid-template-columns:1fr;overflow:auto}}
+  #left{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--line)}
+  #toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  #stage{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;min-height:0;min-width:0;overflow:hidden;background:#fbfcfd}
+  #frame{position:relative;display:flex;line-height:0;max-width:100%;max-height:100%}
+  #vid,#cam{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;display:none;border-radius:8px}
+  canvas{position:relative;display:block;max-width:100%;max-height:100%;width:auto;height:auto;
+    border-radius:8px;border:1px solid var(--line);background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.07)}
+  body.prod canvas{background:transparent}
+  body.prod #frame{border-radius:8px;overflow:hidden;background:#111}
+  #statusbar{display:flex;gap:13px;flex-wrap:wrap;padding:7px 10px;background:var(--panel);
+    border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--tx2)}
+  #statusbar b{color:var(--tx);font-weight:700}
+  #right{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--panel)}
+  #tabs{display:flex;border-bottom:1px solid var(--line)}
+  .tab{flex:1;padding:9px 4px;text-align:center;cursor:pointer;color:var(--tx2);border-bottom:2px solid transparent;user-select:none;font-size:12px}
+  .tab:hover{color:var(--tx)}
+  .tab.on{color:var(--acc);border-bottom-color:var(--acc);background:#fff;font-weight:700}
+  .page{display:none;flex:1;min-height:0;flex-direction:column;background:#fff}
+  .page.on{display:flex}
+  .scroll{overflow:auto;padding:12px;display:flex;flex-direction:column;gap:11px}
+  button{background:#fff;color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-family:inherit}
+  button:hover{border-color:#aeb6c2;background:#f2f4f7}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:700}
+  button.primary:hover{filter:brightness(1.07)}
+  button.danger{color:var(--bad)}
+  select,input[type=text],input[type=number],textarea{background:#fff;color:var(--tx);border:1px solid var(--line);
+    border-radius:6px;padding:5px 7px;font-family:inherit;font-size:12px;min-width:0}
+  textarea{font-family:var(--mono);font-size:12px;line-height:1.55;resize:none}
+  label.chk{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--tx2)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px}
+  .card h3{margin:0 0 9px;font-size:11.5px;letter-spacing:.05em;color:var(--tx2);text-transform:uppercase;font-weight:800}
+  .row{display:grid;grid-template-columns:1fr 108px;gap:8px;align-items:center;margin-bottom:7px}
+  .row:last-child{margin-bottom:0}
+  .row span{color:#48505f}
+  .row.wide{grid-template-columns:1fr}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .hint{color:#5b6472;font-size:11.5px;line-height:1.7}
+  code{font-family:var(--mono);background:#f2f4f7;padding:1px 4px;border-radius:4px;color:#20304a}
+  pre{font-family:var(--mono);background:#f7f8fa;border:1px solid var(--line);border-radius:7px;padding:8px;
+    font-size:11px;line-height:1.5;overflow:auto;max-height:190px;margin:6px 0 0}
+  .badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;border:1px solid var(--line);color:var(--tx2);background:#fff}
+  .badge.ok{color:#fff;background:var(--ok);border-color:var(--ok)}
+  .badge.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
+  .badge.warn{color:#fff;background:var(--warn);border-color:var(--warn)}
+  .badge.run{color:#fff;background:var(--acc);border-color:var(--acc)}
+  #codewrap{flex:1;display:flex;flex-direction:column;min-height:0}
+  #codebar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap;background:var(--panel)}
+  #code{flex:1;width:100%;border:0;background:#fff;padding:10px 12px;min-height:180px;white-space:pre;overflow:auto}
+  #code:focus{outline:none}
+  #console{height:150px;overflow:auto;border-top:1px solid var(--line);background:#fafbfc;padding:8px 10px;
+    font-family:var(--mono);font-size:11.5px;line-height:1.6;white-space:pre-wrap;color:#3a4250}
+  #console .e{color:var(--bad);font-weight:600}
+  #console .w{color:var(--warn);font-weight:600}
+  #console .g{color:var(--ok);font-weight:700}
+  #console .t{color:#98a1b0}
+  .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
+  .kbd{font-family:var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--tx2);background:#fff}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <div id="toolbar">
+      <select id="mode" style="font-weight:700">
+        <option value="test">テスト環境（シミュレータ）</option>
+        <option value="prod">本番環境（実機カメラ）</option>
+      </select>
+      <div class="sep"></div>
+      <button id="btnStart" class="primary">▶ スタート</button>
+      <button id="btnPause">⏸ 一時停止</button>
+      <button id="btnReset">⟲ リセット</button>
+      <div class="sep"></div>
+      <span class="tOnly" style="color:var(--tx2)">シナリオ</span>
+      <select id="scenario" class="tOnly">
+        <option value="A">A: スライド準拠</option>
+        <option value="B">B: 壁多め</option>
+        <option value="C">C: ランダム</option>
+      </select>
+      <select id="speed" class="tOnly">
+        <option value="0.5">×0.5</option><option value="1" selected>×1</option>
+        <option value="2">×2</option><option value="4">×4</option>
+      </select>
+      <div class="sep"></div>
+      <label class="chk"><input type="checkbox" id="vPath" checked> 経路</label>
+      <label class="chk"><input type="checkbox" id="vTrail" checked> 軌跡</label>
+      <label class="chk"><input type="checkbox" id="vDet" checked> 検出</label>
+      <label class="chk tOnly"><input type="checkbox" id="vGrid"> 占有格子</label>
+      <div class="sep"></div>
+      <button id="btnShot">画像保存</button>
+    </div>
+    <div id="stage"><div id="frame"><img id="vid" alt=""><video id="cam" autoplay muted playsinline></video><canvas id="cv" width="1200" height="600"></canvas></div></div>
+    <div id="statusbar">
+      <span>t <b id="sT">0.00</b>s</span>
+      <span>ゴール距離 <b id="sD">-</b>mm</span>
+      <span>経路 <b id="sP">-</b>mm</span>
+      <span>走行 <b id="sM">0</b>mm</span>
+      <span class="tOnly">衝突 <b id="sC">0</b></span>
+      <span class="tOnly">順位 <b id="sK">-</b></span>
+      <span>検出 <b id="sN">0</b></span>
+      <span>指令 <b id="sV">-</b></span>
+      <span>機体 <b id="sB">-</b></span>
+      <span id="sR" class="badge">待機中</span>
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="tabs">
+      <div class="tab on" data-p="pCode">制御コード</div>
+      <div class="tab" data-p="pSet">設定</div>
+      <div class="tab" data-p="pProd">本番接続</div>
+      <div class="tab" data-p="pDoc">使い方</div>
+    </div>
+
+    <div class="page on" id="pCode">
+      <div id="codewrap">
+        <div id="codebar">
+          <button id="btnApply" class="primary">適用 (Ctrl+S)</button>
+          <button id="btnSample">サンプルに戻す</button>
+          <div class="sep"></div>
+          <button id="btnSave">.js 保存</button>
+          <button id="btnLoad">.js 読込</button>
+          <input type="file" id="fileIn" accept=".js,.txt" style="display:none">
+          <button id="btnClr" class="danger">ログ消去</button>
+        </div>
+        <textarea id="code" spellcheck="false" wrap="off"></textarea>
+        <div id="console"></div>
+      </div>
+    </div>
+
+    <div class="page" id="pSet">
+      <div class="scroll">
+        <div class="card">
+          <h3>机 / マーカ</h3>
+          <div class="row"><span>横 W mm</span><input type="number" id="cFw" value="1000" min="300" max="3000" step="10"></div>
+          <div class="row"><span>縦 H mm</span><input type="number" id="cFh" value="500" min="200" max="2000" step="10"></div>
+          <div class="row"><span>マーカ一辺 mm</span><input type="number" id="cMk" value="40" min="10" max="200" step="1"></div>
+          <div class="row"><span>ArUco 辞書</span><select id="cDict"></select></div>
+        </div>
+        <div class="card">
+          <h3>検出のしかた（テスト環境）</h3>
+          <div class="row wide"><select id="cDetMode">
+            <option value="truth">真値＋ノイズ（軽い・既定）</option>
+            <option value="real">描画画像から実検出（本番と同じ検出器・重い）</option>
+          </select></div>
+          <div class="row"><span>カメラ FPS</span><input type="number" id="cFps" value="15" min="1" max="60"></div>
+          <div class="row"><span>遅延 ms</span><input type="number" id="cLat" value="120" min="0" max="1000" step="10"></div>
+          <div class="row"><span>位置ノイズ σ mm</span><input type="number" id="cNp" value="3" min="0" max="60" step="0.5"></div>
+          <div class="row"><span>角度ノイズ σ deg</span><input type="number" id="cNa" value="3" min="0" max="90" step="0.5"></div>
+          <div class="row"><span>検出ロス率 %</span><input type="number" id="cLoss" value="4" min="0" max="100" step="1"></div>
+        </div>
+        <div class="card">
+          <h3>自機 (BUGC2)</h3>
+          <div class="row"><span>自機マーカ ID</span><input type="number" id="cMyId" value="2" min="0" max="49"></div>
+          <div class="row"><span>最大速度 mm/s</span><input type="number" id="cMaxV" value="150" min="10" max="1000" step="5"></div>
+          <div class="row"><span>最大角速度 deg/s</span><input type="number" id="cMaxW" value="140" min="10" max="720" step="10"></div>
+          <div class="row"><span>機体半径 mm</span><input type="number" id="cRad" value="40" min="10" max="200" step="1"></div>
+          <div class="row"><span>指令の応答遅れ 0-1</span><input type="number" id="cLag" value="0.25" min="0" max="0.95" step="0.05"></div>
+        </div>
+        <div class="card">
+          <h3>ライバル / 妨害（テスト環境）</h3>
+          <div class="hint" style="margin-bottom:8px">ライバルは<b>自機と同じ制御コード</b>で走ります（状態は各機で独立）。</div>
+          <div class="row"><span>ライバル ID1</span><input type="checkbox" id="cR1" checked></div>
+          <div class="row"><span>ライバル ID3</span><input type="checkbox" id="cR3" checked></div>
+          <div class="row"><span>ライバルの速さ ×自機</span><input type="number" id="cRv" value="1" min="0.2" max="1.5" step="0.05"></div>
+          <div class="row"><span>妨害 ID10</span><input type="checkbox" id="cJ10" checked></div>
+          <div class="row"><span>妨害 ID11</span><input type="checkbox" id="cJ11" checked></div>
+          <div class="row"><span>妨害の速度 mm/s</span><input type="number" id="cJamV" value="70" min="0" max="300" step="5"></div>
+          <div class="row"><span>乱数シード</span><input type="number" id="cSeed" value="7" min="0" max="99999"></div>
+          <div class="row"><span>衝突したら停止</span><input type="checkbox" id="cStopHit"></div>
+        </div>
+        <div class="card">
+          <h3>配置</h3>
+          <div class="hint">キャンバス上で <b>自機・ライバル・妨害ロボット・壁の端点・ゴール</b> をドラッグして動かせます（5mm刻み）。妨害ロボットの往復先は白丸のハンドルです。</div>
+          <div class="grid2" style="margin-top:8px">
+            <button id="btnLayoutReset">配置を初期化</button>
+            <button id="btnExport">配置を JSON 保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="pProd">
+      <div class="scroll">
+        <div class="card">
+          <h3>映像ソース</h3>
+          <div class="row wide"><select id="pSrc">
+            <option value="cam" selected>このPCのカメラ（Python不要）</option>
+            <option value="mjpeg">MJPEGサーバ（http://…/video_feed）</option>
+          </select></div>
+          <div id="pCamBox">
+            <div class="row wide"><select id="pCamDev"><option value="">既定のカメラ</option></select></div>
+            <div class="row"><span>解像度</span><select id="pCamRes">
+              <option value="1280x720" selected>1280x720</option>
+              <option value="1920x1080">1920x1080</option>
+              <option value="960x540">960x540</option>
+              <option value="640x480">640x480</option>
+            </select></div>
+            <div class="grid2" style="margin-top:8px">
+              <button id="pCamStart" class="primary">カメラを開始</button>
+              <button id="pCamStop">停止</button>
+            </div>
+          </div>
+          <div id="pMjpegBox" style="display:none">
+            <div class="row wide"><input type="text" id="pBase" value="http://192.168.100.24"></div>
+            <div class="row"><span>映像パス</span><input type="text" id="pFeed" value="/video_feed"></div>
+            <div class="grid2" style="margin-top:8px">
+              <button id="pConnect" class="primary">接続 / 再読込</button>
+              <button id="pStop">切断</button>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:8px">状態: <span id="pStat" class="badge">未接続</span></div>
+        </div>
+        <div class="card">
+          <h3>ブラウザ内 ArUco 検出</h3>
+          <div class="row"><span>検出解像度（幅 px）</span><input type="number" id="pDw" value="1280" min="320" max="1920" step="80"></div>
+          <div class="row"><span>検出 FPS 上限</span><input type="number" id="pFps" value="12" min="1" max="30"></div>
+          <div class="row"><span>2値化オフセット</span><input type="number" id="pThr" value="7" min="0" max="40"></div>
+          <div class="row"><span>最小マーカ辺 px</span><input type="number" id="pMin" value="14" min="8" max="80"></div>
+          <div class="row"><span>ハミング補正</span><input type="number" id="pHam" value="1" min="0" max="3"></div>
+          <div class="hint" style="margin-top:6px">検出時間: <b id="pMs">-</b> / 検出数: <b id="pCnt">-</b></div>
+        </div>
+        <div class="card">
+          <h3>キャリブレーション（画像 → mm）</h3>
+          <div class="hint">机の四隅を <b>左上 → 右上 → 右下 → 左下</b> の順にクリックします。四隅マーカがあるならその中心をクリックしてください。</div>
+          <div class="grid2" style="margin-top:8px">
+            <button id="pCalib">四隅を指定する</button>
+            <button id="pCalibClear">キャリブ解除</button>
+          </div>
+          <div class="hint" style="margin-top:8px">状態: <span id="pCalStat" class="badge">未設定</span></div>
+        </div>
+        <div class="card">
+          <h3>走行指令の送信（BUGC2）</h3>
+          <div class="row"><span>送信する</span><input type="checkbox" id="pSend"></div>
+          <div class="row"><span>方式</span>
+            <select id="pProto">
+              <option value="ws" selected>WebSocket（双方向・推奨）</option>
+              <option value="http">HTTP POST（保険）</option>
+            </select></div>
+          <div class="row wide" id="pWsRow"><input type="text" id="pWsUrl" value="ws://192.168.100.52:81"></div>
+          <div class="grid2" id="pWsBtns" style="margin-bottom:7px">
+            <button id="pWsConnect" class="primary">機体に接続</button>
+            <button id="pWsClose">切断</button>
+          </div>
+          <div class="row wide" id="pHttpRow" style="display:none"><input type="text" id="pCmdUrl" value="http://192.168.100.52/cmd"></div>
+          <div class="row"><span>送信レート Hz</span><input type="number" id="pRate" value="15" min="1" max="30"></div>
+          <div class="hint" style="margin:8px 0">
+            機体: <span id="pWsStat" class="badge">未接続</span><br>
+            <b id="pTelem">テレメトリ待ち</b>
+          </div>
+          <div class="hint" style="margin-top:6px">
+            送信本文: <code>{"id":2,"seq":31,"v":120,"w":-35,"left":0.9,"right":0.6,"t":12.34}</code><br>
+            <b>left / right は -1〜1 の正規化値。w&gt;0（時計回り=右旋回）で left が速い。</b><br>
+            送信先は <b>BUGC2(ESP32)の IP を直接</b>でも、PC の <code>/cmd</code> 経由でも可。<br>
+            直近: <b id="pLast">-</b>
+          </div>
+        </div>
+        <div class="card">
+          <h3>サーバ側に必要な追記（重要）</h3>
+          <div class="hint">
+            ブラウザで映像のピクセルを読むには <b>CORS 許可</b>（または同一オリジンから配信）が必要です。
+            配布された <code>server.py</code> に下記を足すか、この HTML をサーバから配信してください。
+          </div>
+          <pre id="pyPatch"></pre>
+          <div class="grid2" style="margin-top:8px">
+            <button id="pCopyPy">Python をコピー</button>
+            <button id="pSelfTest">検出セルフテスト</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="pDoc"><div class="scroll" id="docBody"></div></div>
+  </div>
+</div>
+
+<script type="text/plain" id="sampleCode">
+// ========== BUGC2 自律制御：A*（最短優先）＋ 動く相手は局所回避 ==========
+// 自機 ID2 / ライバル ID1・ID3 が同じこのコードで走る（状態は各機で独立）。
+//
+//  壁だけを「通れない」として最短経路を引く。
+//  他機（ライバル・妨害 ID10/11）は動くので、完全に避けようとせず
+//    ・近くを通るコストを少し上げる（迂回しすぎない）
+//    ・ぶつかりそうな瞬間だけ減速・停止・回避する
+//  これで「妨害が来てもゴールまで最短」を狙う。
+//
+//  obs.markers : 検出できたマーカだけ [{id,x,y,deg}] ※ノイズ・欠け・遅延あり
+//  戻り値      : {v: mm/s, w: deg/s}  w>0 で時計回り（画面上の右旋回）
+
+var st = { path:null, idx:0, miss:0, pose:null, stuck:0, lastD:1e9,
+           planT:-99, logT:-99, cool:0, block:0, failed:false, replan:0,
+           trk:{}, dodge:0, away:0, esc:0 };
+
+var CELL      = 10;    // 占有格子の分解能 mm
+var ROBOT_R   = 40;    // 自機の半径 mm
+var MARGIN    = 18;    // 壁に対する安全余裕 mm
+var REACH     = 45;    // 経路点に到達したと見なす距離 mm
+var TURN_TH   = 20;    // これ以上の角度誤差なら旋回のみ deg
+var REPLAN_DT = 0.4;   // 再計画の周期 s
+var PRED_T    = 1.2;   // 他機の予測時間 s
+var SOFT_R    = 70;    // 他機の周りで「できれば避ける」幅 mm
+var SOFT_COST = 2.2;   // その追加コスト（格子1マス=1。小さいほど最短優先）
+// 他機は通行禁止にしない（壁だけが禁止）。近づくコストで迂回度合いを決める。
+
+function control(obs, api){
+  // ---------- 1. 自己位置 ----------
+  var raw = obs.me;
+  if(raw){
+    st.pose = st.pose
+      ? {x: st.pose.x*0.3 + raw.x*0.7, y: st.pose.y*0.3 + raw.y*0.7, deg: raw.deg}
+      : {x: raw.x, y: raw.y, deg: raw.deg};
+    st.miss = 0;
+  } else {
+    st.miss++;
+    if(st.miss > 4 || !st.pose) return {v:0, w:0};
+  }
+  var me = st.pose;
+  var goal = api.find(obs.markers, 0);
+  if(!goal) return {v:0, w:0};
+
+  var walls  = api.walls(obs.markers);
+  var movers = trackMovers(obs, api);
+  for(var i=0;i<movers.length;i++)
+    if(movers[i].speed > 12) api.point(movers[i].x + movers[i].vx*PRED_T, movers[i].y + movers[i].vy*PRED_T, '#c0392b');
+
+  // ---------- 2. A*（壁だけ禁止・他機はコスト） ----------
+  if((!st.path || obs.t - st.planT > REPLAN_DT) && st.cool <= 0){
+    var np = plan(me, goal, walls, movers, obs.field, api);
+    st.planT = obs.t;
+    if(np){
+      var first = !st.path;
+      st.path = np; st.idx = 0; st.failed = false;
+      api.setPath(np);
+      if(first){ api.log('最短経路: 経路点 ' + np.length + ' 個 / ' + Math.round(api.pathLen(np)) + ' mm', 'g'); st.logT = obs.t; }
+      else if(obs.t - st.logT > 5){ api.log('再計画: 残り ' + Math.round(api.pathLen(np)) + ' mm'); st.logT = obs.t; }
+    } else {
+      st.cool = 0.4; st.path = null;
+      if(!st.failed){ st.failed = true; api.log('壁に囲まれて経路なし（配置を確認）', 'e'); }
+    }
+  }
+  if(st.cool > 0) st.cool -= obs.dt;
+  if(!st.path) return {v:0, w:0};
+
+  // ---------- 3. 接触寸前なら離れる ----------
+  if(st.dodge > 0) st.dodge -= obs.dt;
+  var th = threat(me, movers, api);
+  if(th || st.dodge > 0){
+    if(th){ st.dodge = 0.3; st.away = api.deg(Math.atan2(me.y-th.y, me.x-th.x)); }
+    var e2 = api.norm180(st.away - me.deg);
+    api.text(me.x, me.y-58, '回避');
+    if(Math.abs(e2) > 110) return {v:-110, w: api.clamp(api.norm180(e2-180)*2.0, -90, 90)};
+    return {v: 95*(1-Math.abs(e2)/180), w: api.clamp(e2*2.2, -120, 120)};
+  }
+
+  // ---------- 4. 追従 ----------
+  while(st.idx < st.path.length-1 && api.dist(me, st.path[st.idx]) < REACH) st.idx++;
+  var tgt = st.path[st.idx];
+  for(var k = st.path.length-1; k > st.idx; k--){
+    if(freeWall(me, st.path[k], walls, ROBOT_R+MARGIN, obs.field, api)){ st.idx = k; tgt = st.path[k]; break; }
+  }
+
+  var dGoal = api.dist(me, goal);
+  if(dGoal > st.lastD - 1) st.stuck += obs.dt; else st.stuck = 0;
+  st.lastD = Math.min(st.lastD, dGoal);
+  if(st.stuck > 2.2 && st.esc <= 0){
+    st.stuck = 0; st.lastD = dGoal; st.path = null; st.esc = 0.7; st.replan++;
+    api.log('進まないので後退して再計画 (' + st.replan + ')', 'w');
+  }
+  if(st.esc > 0){ st.esc -= obs.dt; api.text(me.x, me.y-58, '後退'); return {v:-90, w:55}; }
+
+  // 壁で本当に塞がっているときだけ止める（他機は止まる理由にしない）
+  if(!freeWall(me, tgt, walls, ROBOT_R, obs.field, api)){
+    st.block++;
+    if(st.block >= 3){ st.block = 0; st.path = null; }
+    return {v:0, w:0};
+  }
+  st.block = 0;
+  api.point(tgt.x, tgt.y, '#1f6feb');
+
+  var head = api.deg(Math.atan2(tgt.y-me.y, tgt.x-me.x));
+  var err  = api.norm180(head - me.deg);
+  if(Math.abs(err) > TURN_TH) return {v:0, w: api.clamp(err*2.6, -130, 130)};
+
+  var last = (st.idx === st.path.length-1);
+  var vmax = last ? api.clamp(dGoal*2.0, 45, 150) : 150;
+  var v = vmax * (1 - Math.abs(err)/(TURN_TH*2.2));
+
+  // ---------- 5. 衝突までの時間で減速／停止 ----------
+  var risk = ttcRisk(me, head, v, movers, api);
+  if(risk === 'stop'){ api.text(me.x, me.y-58, '譲る'); v = 0; }
+  else if(risk === 'slow'){ v *= 0.4; }
+  return {v:v, w: api.clamp(err*1.9, -70, 70)};
+}
+
+// ===== 他機の速度推定 =====
+function trackMovers(obs, api){
+  var out = [], list = api.obstacles(obs.markers);
+  for(var i=0;i<list.length;i++){
+    var m = list[i], p = st.trk[m.id], vx = 0, vy = 0;
+    if(p && obs.t - p.t > 1e-4 && obs.t - p.t < 0.5){
+      var dt = obs.t - p.t;
+      vx = p.vx*0.75 + ((m.x-p.x)/dt)*0.25;
+      vy = p.vy*0.75 + ((m.y-p.y)/dt)*0.25;
+      var sp = Math.hypot(vx,vy);
+      if(sp > 260){ vx = vx/sp*260; vy = vy/sp*260; }
+    } else if(p){ vx = p.vx; vy = p.vy; }
+    st.trk[m.id] = {x:m.x, y:m.y, vx:vx, vy:vy, t:obs.t};
+    out.push({id:m.id, x:m.x, y:m.y, r:m.r, vx:vx, vy:vy, speed:Math.hypot(vx,vy)});
+  }
+  return out;
+}
+
+// ===== 壁だけを見た通行判定 =====
+function freeWall(a, b, walls, pad, field, api){
+  return api.freeSeg(a, b, walls, [], pad, field);
+}
+
+// ===== A*：壁＝禁止 / 他機＝コスト =====
+function plan(start, goal, walls, movers, field, api){
+  var nx = Math.ceil(field.w/CELL), ny = Math.ceil(field.h/CELL), N = nx*ny;
+  var infl = ROBOT_R + MARGIN;
+  var occ = new Uint8Array(N), pen = new Float32Array(N);
+
+  for(var iy=0; iy<ny; iy++) for(var ix=0; ix<nx; ix++){
+    var p = {x:(ix+0.5)*CELL, y:(iy+0.5)*CELL}, k = iy*nx+ix;
+    var bad = (p.x<infl || p.y<infl || p.x>field.w-infl || p.y>field.h-infl);
+    if(!bad) for(var i=0;i<walls.length;i++)
+      if(api.distSeg(p, walls[i].a, walls[i].b) < infl + api.WALL_HALF){ bad = true; break; }
+    // 他機は「通れない」にしない（塞がれて経路なしになるのを防ぐ＝最短優先）。
+    // 近いほどコストを上げるだけ。実際にぶつかりそうな瞬間は下の局所回避で処理する。
+    if(!bad) for(var j=0;j<movers.length;j++){
+      var m = movers[j], d = api.dist(p, m) - (ROBOT_R + m.r);
+      if(d < 0)            pen[k] += SOFT_COST * 3.0;                       // 重なっている
+      else if(d < SOFT_R)  pen[k] += SOFT_COST * (1 - d/SOFT_R);
+      if(m.speed > 12){
+        var q = {x:m.x + m.vx*PRED_T, y:m.y + m.vy*PRED_T};
+        var d2 = api.distSeg(p, m, q) - (ROBOT_R + m.r);
+        if(d2 < SOFT_R) pen[k] += SOFT_COST*0.8 * (1 - Math.max(0,d2)/SOFT_R);
+      }
+    }
+    occ[k] = bad ? 1 : 0;
+  }
+  api.setGrid(occ, nx, ny, CELL);
+
+  var cel = function(p){ return {ix:api.clamp(Math.floor(p.x/CELL),0,nx-1), iy:api.clamp(Math.floor(p.y/CELL),0,ny-1)}; };
+  var s = nearestFree(occ, nx, ny, cel(start)), t = nearestFree(occ, nx, ny, cel(goal));
+  if(!s || !t) return null;
+
+  var gS = new Float32Array(N).fill(Infinity), fS = new Float32Array(N).fill(Infinity);
+  var prev = new Int32Array(N).fill(-1), open = [], inOpen = new Uint8Array(N);
+  var h = function(ix,iy){ var dx=Math.abs(ix-t.ix), dy=Math.abs(iy-t.iy);
+                           return (dx+dy) + (Math.SQRT2-2)*Math.min(dx,dy); };
+  var sI = s.iy*nx+s.ix, tI = t.iy*nx+t.ix;
+  gS[sI]=0; fS[sI]=h(s.ix,s.iy); open.push(sI); inOpen[sI]=1;
+  var D=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,Math.SQRT2],[1,-1,Math.SQRT2],[-1,1,Math.SQRT2],[-1,-1,Math.SQRT2]];
+  var guard=0, found=false;
+  while(open.length && guard++ < 200000){
+    var bi=0; for(var q2=1;q2<open.length;q2++) if(fS[open[q2]] < fS[open[bi]]) bi=q2;
+    var cur = open.splice(bi,1)[0]; inOpen[cur]=0;
+    if(cur === tI){ found = true; break; }
+    var cx = cur%nx, cy = (cur-cx)/nx;
+    for(var d3=0; d3<8; d3++){
+      var ax=cx+D[d3][0], ay=cy+D[d3][1];
+      if(ax<0||ay<0||ax>=nx||ay>=ny) continue;
+      var ni = ay*nx+ax;
+      if(occ[ni]) continue;
+      if(D[d3][0] && D[d3][1] && (occ[cy*nx+ax] || occ[ay*nx+cx])) continue;
+      var ng = gS[cur] + D[d3][2] + pen[ni];
+      if(ng < gS[ni]){
+        gS[ni]=ng; fS[ni]=ng+h(ax,ay); prev[ni]=cur;
+        if(!inOpen[ni]){ open.push(ni); inOpen[ni]=1; }
+      }
+    }
+  }
+  if(!found && tI !== sI) return null;
+
+  var rp=[], c=tI;
+  while(c>=0){ var cx2=c%nx, cy2=(c-cx2)/nx; rp.push({x:(cx2+0.5)*CELL, y:(cy2+0.5)*CELL}); c = prev[c]; }
+  rp.reverse();
+  rp[0] = {x:start.x, y:start.y};
+  rp[rp.length-1] = {x:goal.x, y:goal.y};
+
+  var out=[rp[0]], i2=0;
+  while(i2 < rp.length-1){
+    var next = i2+1;
+    for(var k2 = rp.length-1; k2 > i2+1; k2--)
+      if(freeWall(rp[i2], rp[k2], walls, infl, field, api)){ next = k2; break; }
+    out.push(rp[next]); i2 = next;
+  }
+  return out;
+}
+
+function nearestFree(occ, nx, ny, c){
+  if(!occ[c.iy*nx+c.ix]) return c;
+  for(var r=1; r<Math.max(nx,ny); r++)
+    for(var dy=-r; dy<=r; dy++) for(var dx=-r; dx<=r; dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dy)) !== r) continue;
+      var ix=c.ix+dx, iy=c.iy+dy;
+      if(ix<0||iy<0||ix>=nx||iy>=ny) continue;
+      if(!occ[iy*nx+ix]) return {ix:ix, iy:iy};
+    }
+  return null;
+}
+
+// ===== 接触寸前で、さらに詰めてくる相手 =====
+function threat(me, movers, api){
+  for(var i=0;i<movers.length;i++){
+    var m = movers[i], d = api.dist(me, m);
+    if(d > ROBOT_R + m.r + 20) continue;
+    var ux=(me.x-m.x)/(d||1), uy=(me.y-m.y)/(d||1);
+    if(m.vx*ux + m.vy*uy > 20 || d < ROBOT_R + m.r + 6) return m;
+  }
+  return null;
+}
+
+// ===== 最接近時刻で減速／停止 =====
+function ttcRisk(me, head, v, movers, api){
+  var mvx = Math.cos(api.rad(head))*v, mvy = Math.sin(api.rad(head))*v, worst = null;
+  for(var i=0;i<movers.length;i++){
+    var m = movers[i];
+    var px = m.x-me.x, py = m.y-me.y, dvx = m.vx-mvx, dvy = m.vy-mvy;
+    var vv = dvx*dvx + dvy*dvy;
+    if(vv < 1) continue;
+    var ts = -(px*dvx + py*dvy)/vv;
+    if(ts < 0 || ts > 1.5) continue;
+    var miss = Math.hypot(px+dvx*ts, py+dvy*ts), need = ROBOT_R + m.r + 20;
+    if(miss < need){
+      if(ts < 0.7 && miss < need*0.75) return 'stop';
+      worst = 'slow';
+    }
+  }
+  return worst;
+}
+</script>
+<script>
+const ARUCO_DICTS = {
+  '4x4_50'          : {n:4, hl:4, c:'b5320f9a332d9946549e79cd9e2ec4f2fedacf56f99111a70eb72a0f24b1263e466566006c5e76af868bb02bccd5dd82fe479471ace4a5542123346f441557b29ecff0cb08ae0929187504ff0df61c5a17182a28328c38b224e82eeb2d3f4b64502e5013'},
+  '4x4_100'         : {n:4, hl:4, c:'b5320f9a332d9946549e79cd9e2ec4f2fedacf56f99111a70eb72a0f24b1263e466566006c5e76af868bb02bccd5dd82fe479471ace4a5542123346f441557b29ecff0cb08ae0929187504ff0df61c5a17182a28328c38b224e82eeb2d3f4b64502e5013519455685d415f9768016867612461e96b126fe567df7e1b80a083448ba2937a846c852a859c9c899fa1bb7cbc04b65bbfc8b7abca1fc962d958d3d5cc98c7a0c537e95df925fbbbee2af74d35758aad76170acf064b2dc149d843f44f364fd369e470c7'},
+  '4x4_250'         : {n:4, hl:4, c:'b5320f9a332d9946549e79cd9e2ec4f2fedacf56f99111a70eb72a0f24b1263e466566006c5e76af868bb02bccd5dd82fe479471ace4a5542123346f441557b29ecff0cb08ae0929187504ff0df61c5a17182a28328c38b224e82eeb2d3f4b64502e5013519455685d415f9768016867612461e96b126fe567df7e1b80a083448ba2937a846c852a859c9c899fa1bb7cbc04b65bbfc8b7abca1fc962d958d3d5cc98c7a0c537e95df925fbbbee2af74d35758aad76170acf064b2dc149d843f44f364fd369e470c77a6eb4eaed4ffce7fea6002500430a880a86026f001c009708370a3109c60b0109fb0b581082182d10781073127412b11af913060c0e0cf104330c9f0ef20efd074c0fa4072f05b50f9107db1ee414391d8015c81f8b15ba1db1208028e922a228532af022f72940214629b92b9c2bb238ca382e300738e73a493a65325d3b88391d3bd3264727802faa2d1425de25532f7734483ca83c41340d34fb369a3de0356a3d093ded3fc43f6c37ce3d5c3d7637b03f173fff48e542684a2d4160495141dd4bdf584f5a485816505d5afa5ab551235b8a591951354c6946c14e0b445f4e594d834d7d47d847735c855e44562b5cbb55c35f6e5feb5d12555e6270621561c26b2063456b5c6b5b780c7acf787f798071e5717479b671d37b33646a66a86ea76e9165226dcb678d6d31'},
+  '5x5_50'          : {n:5, hl:7, c:'145b2bc01c06e61af0edd10395f71aeb5241d4082d0d3d7ec0e2146b10d61321313fa513cee031a2dac01e62b1105e71661fcfca8051e37f097a7580bea26f0f64dc41061de812dda75150e44016b0ca10ba12de19cd0231a599721c3ce8b022424603b9672024223b027376e0368873040d0ce04aaac804643ba07a6fea0998aac082d10109aad1d0863c720ad28250a52f9e0d849f70c309d90da7e310e9627a0e9b9970f948060f591250f6b7d7'},
+  '5x5_100'         : {n:5, hl:7, c:'145b2bc01c06e61af0edd10395f71aeb5241d4082d0d3d7ec0e2146b10d61321313fa513cee031a2dac01e62b1105e71661fcfca8051e37f097a7580bea26f0f64dc41061de812dda75150e44016b0ca10ba12de19cd0231a599721c3ce8b022424603b9672024223b027376e0368873040d0ce04aaac804643ba07a6fea0998aac082d10109aad1d0863c720ad28250a52f9e0d849f70c309d90da7e310e9627a0e9b9970f948060f591250f6b7d711b58e411ad27911e380b116944512ffb4a158cb8d15987f01422fdf14e1227156df22173dbf1164c93c17cbb861880a8719147dd184eb8a18d85ad1b2cda91babd731e9d4321e765280f5740a1b11a53018ce6502ab219098e9810a8061c141a158185314c196d12c1fad3a200922b5019bce000b547c002c76f0132289012d2a700c4b430067bc500faa0d01f1f54038e8790323b2302c364702da51b02e9d8d027c56203efdf50521ee00448efd'},
+  '6x6_50'          : {n:6, hl:9, c:'1e3dd82a60efba389115907eacdc91b3069ed607d6e15d8e8e0e684268b41f588a50f29a307d524fd3c2f34b3c45dfc74e348d85b257710558fc686dcfad078d72a93f6a2b89dcde09fd1e9c4154dbd18f300a310e24807efafd56df11db666883274c76e8cb7819a53d9cf3a9cb84024c67549490c1d288941e7480852bea2fca848e963b77b1fa36652af065bff7bd0541d72d60cf7246a21338a39eb15a893e743a417ee9e4f11e26c0530db6d20589bfae346409e8a0b60537a8916159069ba6bff78d7b70ad96a4f75846f71a7a95192fc8609760aa8a2d44c3f93eb78b14'},
+  '6x6_250'         : {n:6, hl:9, c:'1e3dd82a60efba389115907eacdc91b3069ed607d6e15d8e8e0e684268b41f588a50f29a307d524fd3c2f34b3c45dfc74e348d85b257710558fc686dcfad078d72a93f6a2b89dcde09fd1e9c4154dbd18f300a310e24807efafd56df11db666883274c76e8cb7819a53d9cf3a9cb84024c67549490c1d288941e7480852bea2fca848e963b77b1fa36652af065bff7bd0541d72d60cf7246a21338a39eb15a893e743a417ee9e4f11e26c0530db6d20589bfae346409e8a0b60537a8916159069ba6bff78d7b70ad96a4f75846f71a7a95192fc8609760aa8a2d44c3f93eb78b14988da84d49ede2b3c8a529e07b8b593b855fb7f8e426fbc205225ec04487765c4c324259c5a91bd8dce73e6b2ccd0ca6272c9435d44dcfbe80f34e57d15877efc6858e9f77ef37722ce43f2542bdcff4b337c7ddbdaa1a254e0fa982c1bb5d81b49b08035829f8607c4095fc0fe26617b14483644110ad5ffb712829553f16e13184c187a496b01ae8861121913ae0a11b67b5a1725dc95f0b288961f763354146aa31c16c1f733cb18c663ecfe490f464518a3f44ba70b67419c623e848d1914a154f499f6d575a9c813558355b2c57b77610f5c3436fe45c48fc77e5e6eef4025f233b6ff5b742a632650fa33ae65d3175cc6a9c245ae69c5f304269d2484ea7479e2de672cf23eab77b1dc4147e0c072177a697064778b2d870779c585794866f59fc682f6727f5854e2f4149a11859349c7160c979dd194fd8a21e12e38ae701c82cad01219c1b0351f9eeb64ad80d4b537314b4beaac7e3bbb683dbcfc672f72c1c1e74dbabcb55ee59dcba053724d0090fcf1d06c3ad54d3f120574e6e33b1a7e3533ea4ae8068eb14ec07c0597eaf3803daf63b27d88f30798379fe4bba9b9aba57d86bc0d1625ab13ce7bae74e81fd61756e0763206a708a54072a898a18815d42f80cf4cc3d5fd6bb65864ecd313a31f521f5207f91fa5df70024f47a700084d882043cc2f29047b50211067ae4c1d00aa968a304d138e940510a80da0140b0007019d9cee1081057e3b086b97b660ee8b860a0b6c76b9b0fdcb98cb0fcacf3a014249fd981407201fd150910d57135cd730711479abb61cb9a92381cdd077661f2e7c24b1966424771957d4c841fa8f4f041b8246ed81baee10fe22a4b63ca22bf9012f232c15b40255aa966c27a5afa9725f40e425286655cde2c427e0e02ab97cbd02946e1d232da6284102bfb209a6368cd66bc3487777c734ddeb8403791f76f13a228e1753e13bd4083c9843ca239589d1793974daeeb3f6dbc7313d6bc050c39ab2749746024e25e4682ba0bc42e9cd5ae44c9b7b3f40c7d41e946d2b4cce43195356b4122e6dd94753a59ab4e1ef1e084e4ac09604e5faa06f4a8d32943491594b394d4ddb6214ba761e8149d483d8e56290ef6c537ed5ffc55f5a7afa55d5ea64f581bab1da5ebe926dd5f10f99b55d1edfa5c5f718df025de11e4686033bb24764581afe163c8dda7661da3d8fd6e3a22afa6e6105b716a89a9e8c6a97224f56b12c38016b684b22a6f94c15796da6fea0d6feaca457703d38a60'},
+  '7x7_50'          : {n:7, hl:13, c:'1bab8d94b94151c837e27c815613d545758ba4f14cce0b6fd29818d78f62664ac0b1002846b3dc1a6d77cdea89007942db1117b61120e3ead2d3c176cb631adc7e1ea01a305e9210044ce170a8340a9e6d72e91e113c49108c473317bfe64d7939719c220b60b52f1a7e0c2e43f16003c33d9d91db04d979854e0f1070fa9aec82260752095d3c3d308da908f679ba091254fbd3c570bced87c931500e945bdf45f11128bbc45026b2136252ac9db47143a9285b05f0176f1cc62d9a11976bbb97b6301a7cbdd6f06661e528467fa3391fbada33e77cd0748c49dd09dd0c430fc48761e0159a86df3b8601c81a9871c040293fb340c44803345c234cbda056a104fc3668052d271253f46059eea9b7e8ad06bd27f3c6cf807ee957b07be7089a053e9fe8009081c90855ea0be3226d068040bd64e4807abb0df36483e2b840e555f24151c7'},
+  'ARUCO_ORIGINAL'  : {n:5, hl:7, c:'108421010842171084209108420e10842f010842f710842e910842ee108413010841371084129108412e10841d010841d710841c910841ce1085e101085e171085e091085e0e1085ef01085ef71085ee91085eee1085d301085d371085d291085d2e1085dd01085dd71085dc91085dce108261010826171082609108260e10826f010826f710826e910826ee108253010825371082529108252e10825d010825d710825c910825ce1083a101083a171083a091083a0e1083af01083af71083ae91083aee108393010839371083929108392e10839d010839d710839c910839ce10bc21010bc21710bc20910bc20e10bc2f010bc2f710bc2e910bc2ee10bc13010bc13710bc12910bc12e10bc1d010bc1d710bc1c910bc1ce10bde1010bde1710bde0910bde0e10bdef010bdef710bdee910bdeee10bdd3010bdd3710bdd2910bdd2e10bddd010bddd710bddc910bddce10ba61010ba61710ba60910ba60e10ba6f010ba6f710ba6e910ba6ee10ba53010ba53710ba52910ba52e10ba5d010ba5d710ba5c910ba5ce10bba1010bba1710bba0910bba0e10bbaf010bbaf710bbae910bbaee10bb93010bb93710bb92910bb92e10bb9d010bb9d710bb9c910bb9ce104c210104c217104c209104c20e104c2f0104c2f7104c2e9104c2ee104c130104c137104c129104c12e104c1d0104c1d7104c1c9104c1ce104de10104de17104de09104de0e104def0104def7104dee9104deee104dd30104dd37104dd29104dd2e104ddd0104ddd7104ddc9104ddce104a610104a617104a609104a60e104a6f0104a6f7104a6e9104a6ee104a530104a537104a529104a52e104a5d0104a5d7104a5c9104a5ce104ba10104ba17104ba09104ba0e104baf0104baf7104bae9104baee104b930104b937104b929104b92e104b9d0104b9d7104b9c9104b9ce107421010742171074209107420e10742f010742f710742e910742ee107413010741371074129107412e10741d010741d710741c910741ce1075e101075e171075e091075e0e1075ef01075ef71075ee91075eee1075d301075d371075d291075d2e1075dd01075dd71075dc91075dce107261010726171072609107260e10726f010726f710726e910726ee107253010725371072529107252e10725d010725d710725c910725ce1073a101073a171073a091073a0e1073af01073af71073ae91073aee107393010739371073929107392e10739d010739d710739c910739ce178421017842171784209178420e17842f017842f717842e917842ee178413017841371784129178412e17841d017841d717841c917841ce1785e101785e171785e091785e0e1785ef01785ef71785ee91785eee1785d301785d371785d291785d2e1785dd01785dd71785dc91785dce178261017826171782609178260e17826f017826f717826e917826ee178253017825371782529178252e17825d017825d717825c917825ce1783a101783a171783a091783a0e1783af01783af71783ae91783aee178393017839371783929178392e17839d017839d717839c917839ce17bc21017bc21717bc20917bc20e17bc2f017bc2f717bc2e917bc2ee17bc13017bc13717bc12917bc12e17bc1d017bc1d717bc1c917bc1ce17bde1017bde1717bde0917bde0e17bdef017bdef717bdee917bdeee17bdd3017bdd3717bdd2917bdd2e17bddd017bddd717bddc917bddce17ba61017ba61717ba60917ba60e17ba6f017ba6f717ba6e917ba6ee17ba53017ba53717ba52917ba52e17ba5d017ba5d717ba5c917ba5ce17bba1017bba1717bba0917bba0e17bbaf017bbaf717bbae917bbaee17bb93017bb93717bb92917bb92e17bb9d017bb9d717bb9c917bb9ce174c210174c217174c209174c20e174c2f0174c2f7174c2e9174c2ee174c130174c137174c129174c12e174c1d0174c1d7174c1c9174c1ce174de10174de17174de09174de0e174def0174def7174dee9174deee174dd30174dd37174dd29174dd2e174ddd0174ddd7174ddc9174ddce174a610174a617174a609174a60e174a6f0174a6f7174a6e9174a6ee174a530174a537174a529174a52e174a5d0174a5d7174a5c9174a5ce174ba10174ba17174ba09174ba0e174baf0174baf7174bae9174baee174b930174b937174b929174b92e174b9d0174b9d7174b9c9174b9ce177421017742171774209177420e17742f017742f717742e917742ee177413017741371774129177412e17741d017741d717741c917741ce1775e101775e171775e091775e0e1775ef01775ef71775ee91775eee1775d301775d371775d291775d2e1775dd01775dd71775dc91775dce177261017726171772609177260e17726f017726f717726e917726ee177253017725371772529177252e17725d017725d717725c917725ce1773a101773a171773a091773a0e1773af01773af71773ae91773aee177393017739371773929177392e17739d017739d717739c917739ce098421009842170984209098420e09842f009842f709842e909842ee098413009841370984129098412e09841d009841d709841c909841ce0985e100985e170985e090985e0e0985ef00985ef70985ee90985eee0985d300985d370985d290985d2e0985dd00985dd70985dc90985dce098261009826170982609098260e09826f009826f709826e909826ee098253009825370982529098252e09825d009825d709825c909825ce0983a100983a170983a090983a0e0983af00983af70983ae90983aee098393009839370983929098392e09839d009839d709839c909839ce09bc21009bc21709bc20909bc20e09bc2f009bc2f709bc2e909bc2ee09bc13009bc13709bc12909bc12e09bc1d009bc1d709bc1c909bc1ce09bde1009bde1709bde0909bde0e09bdef009bdef709bdee909bdeee09bdd3009bdd3709bdd2909bdd2e09bddd009bddd709bddc909bddce09ba61009ba61709ba60909ba60e09ba6f009ba6f709ba6e909ba6ee09ba53009ba53709ba52909ba52e09ba5d009ba5d709ba5c909ba5ce09bba1009bba1709bba0909bba0e09bbaf009bbaf709bbae909bbaee09bb93009bb93709bb92909bb92e09bb9d009bb9d709bb9c909bb9ce094c210094c217094c209094c20e094c2f0094c2f7094c2e9094c2ee094c130094c137094c129094c12e094c1d0094c1d7094c1c9094c1ce094de10094de17094de09094de0e094def0094def7094dee9094deee094dd30094dd37094dd29094dd2e094ddd0094ddd7094ddc9094ddce094a610094a617094a609094a60e094a6f0094a6f7094a6e9094a6ee094a530094a537094a529094a52e094a5d0094a5d7094a5c9094a5ce094ba10094ba17094ba09094ba0e094baf0094baf7094bae9094baee094b930094b937094b929094b92e094b9d0094b9d7094b9c9094b9ce097421009742170974209097420e09742f009742f709742e909742ee097413009741370974129097412e09741d009741d709741c909741ce0975e100975e170975e090975e0e0975ef00975ef70975ee90975eee0975d300975d370975d290975d2e0975dd00975dd70975dc90975dce097261009726170972609097260e09726f009726f709726e909726ee097253009725370972529097252e09725d009725d709725c909725ce0973a100973a170973a090973a0e0973af00973af70973ae90973aee097393009739370973929097392e09739d009739d709739c909739ce0e842100e842170e842090e8420e0e842f00e842f70e842e90e842ee0e841300e841370e841290e8412e0e841d00e841d70e841c90e841ce0e85e100e85e170e85e090e85e0e0e85ef00e85ef70e85ee90e85eee0e85d300e85d370e85d290e85d2e0e85dd00e85dd70e85dc90e85dce0e826100e826170e826090e8260e0e826f00e826f70e826e90e826ee0e825300e825370e825290e8252e0e825d00e825d70e825c90e825ce0e83a100e83a170e83a090e83a0e0e83af00e83af70e83ae90e83aee0e839300e839370e839290e8392e0e839d00e839d70e839c90e839ce0ebc2100ebc2170ebc2090ebc20e0ebc2f00ebc2f70ebc2e90ebc2ee0ebc1300ebc1370ebc1290ebc12e0ebc1d00ebc1d70ebc1c90ebc1ce0ebde100ebde170ebde090ebde0e0ebdef00ebdef70ebdee90ebdeee0ebdd300ebdd370ebdd290ebdd2e0ebddd00ebddd70ebddc90ebddce0eba6100eba6170eba6090eba60e0eba6f00eba6f70eba6e90eba6ee0eba5300eba5370eba5290eba52e0eba5d00eba5d70eba5c90eba5ce0ebba100ebba170ebba090ebba0e0ebbaf00ebbaf70ebbae90ebbaee0ebb9300ebb9370ebb9290ebb92e0ebb9d00ebb9d70ebb9c90ebb9ce0e4c2100e4c2170e4c2090e4c20e0e4c2f00e4c2f70e4c2e90e4c2ee0e4c1300e4c1370e4c1290e4c12e0e4c1d00e4c1d70e4c1c90e4c1ce0e4de100e4de170e4de090e4de0e0e4def00e4def70e4dee90e4deee0e4dd300e4dd370e4dd290e4dd2e0e4ddd00e4ddd70e4ddc90e4ddce0e4a6100e4a6170e4a6090e4a60e0e4a6f00e4a6f70e4a6e90e4a6ee0e4a5300e4a5370e4a5290e4a52e0e4a5d00e4a5d70e4a5c90e4a5ce0e4ba100e4ba170e4ba090e4ba0e0e4baf00e4baf70e4bae90e4baee0e4b9300e4b9370e4b9290e4b92e0e4b9d00e4b9d70e4b9c90e4b9ce0e742100e742170e742090e7420e0e742f00e742f70e742e90e742ee0e741300e741370e741290e7412e0e741d00e741d70e741c90e741ce0e75e100e75e170e75e090e75e0e0e75ef00e75ef70e75ee90e75eee0e75d300e75d370e75d290e75d2e0e75dd00e75dd70e75dc90e75dce0e726100e726170e726090e7260e0e726f00e726f70e726e90e726ee0e725300e725370e725290e7252e0e725d00e725d70e725c90e725ce0e73a100e73a170e73a090e73a0e0e73af00e73af70e73ae90e73aee0e739300e739370e739290e7392e0e739d00e739d70e739c90e739ce'},
+  'ARUCO_MIP_36h12' : {n:6, hl:9, c:'d2b63a09d6001134e51206fbe72ff8ad6cb485da9bc49b461afe9c6db51fe135248c541f008f345038ea462eceeac2be76d1af615c44b48a49f272e4e1283b78b1f2fa827d34f57e89222fff14c1669406bf49b3511dc191cd5d11d7c3f8516a130e35e29f27eff428d8ae0c90d5484772319cbc93c3b0c3dfc0424bccc92a081d630762743d96d0645bf19f38d7fd60c6cbf9a103c1be7c65276f75e634490a3f63da60acd523cc68df59ab46f9dae88d533d78b6d62ec21b3c02b64622e56d408ac5f5770aaaa993f664caa07c8d5c9b4f7b0aa9ef0e050705c5750ac81f545e735b91e748cc35cee4e44694d04b5e121de0261017d0ff1d439eb5a1a33ac96174c62c021ee27f7168b1c5ece96a05b0c6a0d0568dfc192d25e5f1adbeccc8cfec87f00d0b9dde7a88dcef81e445681cb9dbb2ffc83a48d96df1b72cc2e7d0c295b53ff498327049968edc299e4e1af858683e2d1b810b45c046ac44bfe26453466153990bd5981c9ed0f6ac26729d6583993f7953ac05ac5d357adff3b0d5c055652f547ef4486c115041640fd9e5fce08bbcf7109bb343ec21435c9235b4dfce4459752cf2ec915b82c51881eed02dda7dc972e014214442e890f999a88565278e80d9d80891cbcf3425dd82410239551d348fe8f0c7094106a97082609b40c0fc9caf36688181d11718613c080f1ab7629a357bfc184c03b7a46204dedce6ad6300d3784cc4cd0942160e5c487d2adfa87850e77494e750fc7cbf2e5dfdad88324da5234b52f80378204514abdf2ad53365e78ef949caa6ca203c39ddf3c68c5385d5bfcbbf67623241e21abc90d5cc388c6fe85da0e2d62d10855dfe94d46efd6b76ea12d619db377d3deed0efa71e6ec3ae2f441faee83ba19c8ff5313035eab6ce8f7625880dab58d8d3409e0d2be92ee21d60302c6c469ffc72487eebeed342587ef7a7a8cc4e5276a437650999e41ef47d0969e42c02baf46b9259f3e472116a1dc09f2de4d8400effac297b371ff8c668339da9d010aee3f1cd00b4c095070fc3bf84c9a77038f863d763646ff045ce1b964127a5d45da814e00ef6c5e95abfd8b2e9cb729036c47dd7b8ee97c6b0e9e8f657d4ad2ef1a8811c7f3247bde7c313adadfb646e5b2857433e67cd912ab9fdd2d8afa67f2be6a28fc5e72049cdbdae65dac121251a45261089ab841e2f096ee0b0caee573fd6677e86444b3f518be8b3a56a680a75cfcac02baea897d815e1c1d4386e081a14f5b0ee658a8d81a3868efa73668a9673e8fc53d852e2b7edd58b2470f13f69795f324589ffc8e2e2080c9c064265f7d3d714dd101692c6ef13e67f2f495041dad631a150341564c18c7420a72eec351f0f9dc60a9559bc67f32911d0d21c0d4ffce01cef5b04e23a3520aa4f04e49e1c4fcc43208e8f6e88486774a59e98c75582c59fb7dc9446a46138292dcc2e004d61631d05527809a0163852d8f657f639cca6c3e37cb136bc7afc5a83e539aa44fc30bdec1bd3ce020b9f7c4b8f35fb0b8165f63733dc88d6910a2f7e4dc8cb5ff53de259ff6b46d070dd432d3b97417075f1c044d58dbea0'}
+};
+</script>
+<script>
+/* =========================================================================
+   ArUco マーカ検出（自前実装 / 外部ライブラリ不要）
+   detectAruco(gray, W, H, dict, opt) -> [{id, corners:[{x,y}x4], cx, cy, deg, hamming}]
+   corners は マーカ座標系の 左上→右上→右下→左下（OpenCV と同じ順）
+   ========================================================================= */
+const ArucoDict = (function(){
+  const cache = new Map();
+  return {
+    names: ()=>Object.keys(ARUCO_DICTS),
+    get(name){
+      if(cache.has(name)) return cache.get(name);
+      const d = ARUCO_DICTS[name];
+      if(!d) return null;
+      const map = new Map(), list = [];
+      for(let i=0; i*d.hl < d.c.length; i++){
+        const code = parseInt(d.c.substr(i*d.hl, d.hl), 16);
+        map.set(code, i); list.push(code);
+      }
+      const o = {name, n:d.n, map, list};
+      cache.set(name, o); return o;
+    },
+    // id のビット（行優先, 1=白）を返す。描画用。
+    bits(name, id){
+      const d = ArucoDict.get(name); if(!d) return null;
+      const code = d.list[id % d.list.length];
+      const n = d.n, out = new Uint8Array(n*n);
+      for(let i=0;i<n*n;i++) out[i] = (code >> (n*n-1-i)) & 1;
+      return {n, bits:out};
+    }
+  };
+})();
+
+function detectAruco(gray, W, H, dict, opt){
+  opt = opt || {};
+  const n        = dict.n;
+  const minSide  = opt.minSide  || 14;      // マーカ一辺の最小px
+  const C        = (opt.thrC   !== undefined) ? opt.thrC : 7;
+  let   blk      = opt.block   || (Math.max(15, Math.round(Math.min(W,H)/12)) | 1);
+  const maxHam   = (opt.maxHamming !== undefined) ? opt.maxHamming : 1;
+
+  // ---- 1. 適応的2値化（積分画像） ----
+  const ii = new Float64Array((W+1)*(H+1));
+  for(let y=0;y<H;y++){
+    let rs = 0;
+    for(let x=0;x<W;x++){
+      rs += gray[y*W+x];
+      ii[(y+1)*(W+1)+(x+1)] = ii[y*(W+1)+(x+1)] + rs;
+    }
+  }
+  const half = blk>>1;
+  const bin = new Uint8Array(W*H);            // 1 = 黒（マーカ本体）
+  for(let y=0;y<H;y++){
+    const y0 = Math.max(0,y-half), y1 = Math.min(H-1,y+half);
+    for(let x=0;x<W;x++){
+      const x0 = Math.max(0,x-half), x1 = Math.min(W-1,x+half);
+      const area = (x1-x0+1)*(y1-y0+1);
+      const sum = ii[(y1+1)*(W+1)+(x1+1)] - ii[y0*(W+1)+(x1+1)] - ii[(y1+1)*(W+1)+x0] + ii[y0*(W+1)+x0];
+      bin[y*W+x] = (gray[y*W+x] < sum/area - C) ? 1 : 0;
+    }
+  }
+
+  // ---- 2. 黒領域のラベリング（4近傍 BFS） ----
+  const lab = new Int32Array(W*H).fill(-1);
+  const stack = new Int32Array(W*H);
+  const comps = [];
+  for(let p=0;p<W*H;p++){
+    if(!bin[p] || lab[p] >= 0) continue;
+    const id = comps.length;
+    let sp = 0; stack[sp++] = p; lab[p] = id;
+    let cnt=0, minx=W, maxx=-1, miny=H, maxy=-1, sx=0, sy=0, first=p;
+    while(sp){
+      const q = stack[--sp], qx = q%W, qy = (q-qx)/W;
+      cnt++; sx+=qx; sy+=qy;
+      if(qx<minx)minx=qx; if(qx>maxx)maxx=qx; if(qy<miny)miny=qy; if(qy>maxy)maxy=qy;
+      if(qx>0   && bin[q-1] && lab[q-1]<0){ lab[q-1]=id; stack[sp++]=q-1; }
+      if(qx<W-1 && bin[q+1] && lab[q+1]<0){ lab[q+1]=id; stack[sp++]=q+1; }
+      if(qy>0   && bin[q-W] && lab[q-W]<0){ lab[q-W]=id; stack[sp++]=q-W; }
+      if(qy<H-1 && bin[q+W] && lab[q+W]<0){ lab[q+W]=id; stack[sp++]=q+W; }
+    }
+    comps.push({id, cnt, minx, maxx, miny, maxy, cx:sx/cnt, cy:sy/cnt, first});
+  }
+
+  // ---- 3. 候補ごとに輪郭 → 四角形あてはめ → ビット読み取り ----
+  const out = [];
+  const minArea = minSide*minSide*0.35, maxArea = W*H*0.45;
+  for(const cp of comps){
+    if(cp.cnt < minArea || cp.cnt > maxArea) continue;
+    const bw = cp.maxx-cp.minx+1, bh = cp.maxy-cp.miny+1;
+    if(bw < minSide || bh < minSide) continue;
+    if(cp.minx===0 || cp.miny===0 || cp.maxx===W-1 || cp.maxy===H-1) continue;  // 画面端は捨てる
+    const cont = traceContour(lab, W, H, cp);
+    if(!cont || cont.length < 12) continue;
+    const quad = fitQuad(cont);
+    if(!quad) continue;
+    // 妥当性: 辺の長さ・輪郭のズレ・面積比
+    let ok = true, per = 0;
+    for(let i=0;i<4;i++){
+      const a = quad[i], b = quad[(i+1)%4];
+      const L = Math.hypot(b.x-a.x, b.y-a.y);
+      per += L;
+      if(L < minSide*0.8) ok = false;
+    }
+    if(!ok) continue;
+    let dev = 0;
+    for(const p of cont){
+      let dmin = 1e9;
+      for(let i=0;i<4;i++) dmin = Math.min(dmin, segDist(p, quad[i], quad[(i+1)%4]));
+      if(dmin > dev) dev = dmin;
+    }
+    if(dev > per*0.045) continue;
+    const qArea = Math.abs(polyArea(quad));
+    if(qArea < 1 || cp.cnt/qArea < 0.62) continue;
+
+    // 4. マス目のサンプリング（外周1セルを含む n+2）
+    const N = n+2;
+    const Hm = homography(
+      [{x:0,y:0},{x:N,y:0},{x:N,y:N},{x:0,y:N}],
+      quad
+    );
+    if(!Hm) continue;
+    const cell = new Float64Array(N*N);
+    for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      let sum=0, k=0;
+      for(let sy=1;sy<=3;sy++) for(let sx=1;sx<=3;sx++){
+        const p = applyH(Hm, c + sx/4, r + sy/4);
+        sum += bilinear(gray, W, H, p.x, p.y); k++;
+      }
+      cell[r*N+c] = sum/k;
+    }
+    const th = otsu(cell);
+    const cb = new Uint8Array(N*N);              // 1 = 白
+    for(let i=0;i<N*N;i++) cb[i] = cell[i] > th ? 1 : 0;
+    // 外周は黒であること
+    let bad = 0;
+    for(let i=0;i<N;i++){ bad += cb[i] + cb[(N-1)*N+i] + cb[i*N] + cb[i*N+N-1]; }
+    if(bad > Math.floor(N*4*0.12)) continue;
+
+    // 5. 内側 n x n を 4 方向で照合
+    const inner = new Uint8Array(n*n);
+    for(let r=0;r<n;r++) for(let c=0;c<n;c++) inner[r*n+c] = cb[(r+1)*N + (c+1)];
+    let best = null;
+    for(let rot=0; rot<4; rot++){
+      const b = rotBits(inner, n, rot);
+      let code = 0;
+      for(let i=0;i<n*n;i++) code = (code<<1) | b[i];
+      let id = dict.map.get(code), ham = 0;
+      if(id === undefined && maxHam > 0){
+        for(let k=0;k<dict.list.length;k++){
+          const h = popcount(dict.list[k] ^ code);
+          if(h <= maxHam && (id === undefined || h < ham)){ id = k; ham = h; }
+        }
+      }
+      if(id !== undefined && (best === null || ham < best.ham)) best = {id, rot, ham};
+    }
+    if(!best) continue;
+
+    // 6. 角の並びを回転に合わせる（マーカ座標系の 左上→右上→右下→左下）
+    const cor = [];
+    const k0 = (4 - best.rot) % 4;                // 正規化された左上が quad の何番目か
+    for(let i=0;i<4;i++) cor.push(quad[(i + k0) % 4]);
+    const cx = (cor[0].x+cor[1].x+cor[2].x+cor[3].x)/4;
+    const cy = (cor[0].y+cor[1].y+cor[2].y+cor[3].y)/4;
+    const degv = Math.atan2(cor[1].y-cor[0].y, cor[1].x-cor[0].x)*180/Math.PI;
+    out.push({id:best.id, hamming:best.ham, corners:cor, cx, cy,
+              deg:((degv+180)%360+360)%360-180, size:per/4});
+  }
+  return out;
+}
+
+/* ---------- 補助 ---------- */
+function traceContour(lab, W, H, cp){
+  // Moore近傍追跡（外側輪郭）
+  const id = cp.id;
+  let sx=-1, sy=-1;
+  for(let y=cp.miny; y<=cp.maxy && sx<0; y++)
+    for(let x=cp.minx; x<=cp.maxx; x++)
+      if(lab[y*W+x]===id){ sx=x; sy=y; break; }
+  if(sx<0) return null;
+  const dx=[1,1,0,-1,-1,-1,0,1], dy=[0,1,1,1,0,-1,-1,-1];
+  const out=[{x:sx,y:sy}];
+  let cx=sx, cy=sy, dir=7, guard=0;
+  const maxLen = (cp.maxx-cp.minx + cp.maxy-cp.miny)*4 + 40;
+  do{
+    let found=false;
+    for(let k=0;k<8;k++){
+      const d=(dir+6+k)%8, nx=cx+dx[d], ny=cy+dy[d];
+      if(nx<0||ny<0||nx>=W||ny>=H) continue;
+      if(lab[ny*W+nx]===id){ cx=nx; cy=ny; dir=d; out.push({x:cx,y:cy}); found=true; break; }
+    }
+    if(!found) break;
+    if(++guard > maxLen*2) break;
+  } while(!(cx===sx && cy===sy) || out.length<3);
+  if(out.length>2) out.pop();
+  return out;
+}
+function fitQuad(cont){
+  // 重心から最遠 → その対角 → 対角線から左右に最遠 の4点
+  let cx=0, cy=0;
+  for(const p of cont){ cx+=p.x; cy+=p.y; }
+  cx/=cont.length; cy/=cont.length;
+  let i0=0, d0=-1;
+  for(let i=0;i<cont.length;i++){ const d=(cont[i].x-cx)**2+(cont[i].y-cy)**2; if(d>d0){d0=d;i0=i;} }
+  let i2=0, d2=-1;
+  for(let i=0;i<cont.length;i++){ const d=(cont[i].x-cont[i0].x)**2+(cont[i].y-cont[i0].y)**2; if(d>d2){d2=d;i2=i;} }
+  const A=cont[i0], B=cont[i2];
+  let i1=-1, i3=-1, m1=0, m3=0;
+  for(let i=0;i<cont.length;i++){
+    const P=cont[i];
+    const cr = (B.x-A.x)*(P.y-A.y) - (B.y-A.y)*(P.x-A.x);
+    if(cr > m1){ m1=cr; i1=i; }
+    if(cr < m3){ m3=cr; i3=i; }
+  }
+  if(i1<0 || i3<0) return null;
+  const q = [A, cont[i1], B, cont[i3]];
+  if(polyArea(q) < 0) q.reverse();          // 画像座標(y下)で時計回りに揃える
+  return q;
+}
+function polyArea(q){
+  let s=0;
+  for(let i=0;i<q.length;i++){ const a=q[i], b=q[(i+1)%q.length]; s += a.x*b.y - b.x*a.y; }
+  return s/2;
+}
+function segDist(p,a,b){
+  const vx=b.x-a.x, vy=b.y-a.y, L2=vx*vx+vy*vy;
+  let t = L2<1e-9 ? 0 : ((p.x-a.x)*vx + (p.y-a.y)*vy)/L2;
+  t = t<0?0:t>1?1:t;
+  return Math.hypot(p.x-(a.x+vx*t), p.y-(a.y+vy*t));
+}
+function homography(src, dst){
+  // 4点対応 → 3x3（DLT, 8x8 の連立を解く）
+  const A=[], b=[];
+  for(let i=0;i<4;i++){
+    const {x:X,y:Y}=src[i], {x:u,y:v}=dst[i];
+    A.push([X,Y,1,0,0,0,-u*X,-u*Y]); b.push(u);
+    A.push([0,0,0,X,Y,1,-v*X,-v*Y]); b.push(v);
+  }
+  const h = solve(A,b);
+  if(!h) return null;
+  return [h[0],h[1],h[2], h[3],h[4],h[5], h[6],h[7],1];
+}
+function solve(A,b){
+  const n=b.length;
+  const M = A.map((r,i)=>r.concat([b[i]]));
+  for(let c=0;c<n;c++){
+    let p=c;
+    for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c]) < 1e-12) return null;
+    const t=M[c]; M[c]=M[p]; M[p]=t;
+    for(let r=0;r<n;r++){
+      if(r===c) continue;
+      const f = M[r][c]/M[c][c];
+      for(let k=c;k<=n;k++) M[r][k] -= f*M[c][k];
+    }
+  }
+  return M.map((r,i)=>r[n]/r[i]);
+}
+function applyH(h,x,y){
+  const w = h[6]*x + h[7]*y + h[8];
+  return { x:(h[0]*x+h[1]*y+h[2])/w, y:(h[3]*x+h[4]*y+h[5])/w };
+}
+function bilinear(g,W,H,x,y){
+  if(x<0)x=0; if(y<0)y=0; if(x>W-1)x=W-1; if(y>H-1)y=H-1;
+  const x0=x|0, y0=y|0, x1=Math.min(x0+1,W-1), y1=Math.min(y0+1,H-1);
+  const fx=x-x0, fy=y-y0;
+  return g[y0*W+x0]*(1-fx)*(1-fy) + g[y0*W+x1]*fx*(1-fy) + g[y1*W+x0]*(1-fx)*fy + g[y1*W+x1]*fx*fy;
+}
+function otsu(v){
+  let mn=1e9, mx=-1e9;
+  for(const x of v){ if(x<mn)mn=x; if(x>mx)mx=x; }
+  if(mx-mn < 8) return (mn+mx)/2;
+  const B=32, hist=new Float64Array(B);
+  for(const x of v) hist[Math.min(B-1, ((x-mn)/(mx-mn)*B)|0)]++;
+  const tot=v.length;
+  let sum=0; for(let i=0;i<B;i++) sum += i*hist[i];
+  let wB=0, sB=0, best=-1, bt=0;
+  for(let i=0;i<B;i++){
+    wB += hist[i]; if(!wB) continue;
+    const wF = tot-wB; if(!wF) break;
+    sB += i*hist[i];
+    const m = sB/wB - (sum-sB)/wF;
+    const bw = wB*wF*m*m;
+    if(bw > best){ best=bw; bt=i; }
+  }
+  return mn + (bt+0.5)/B*(mx-mn);
+}
+function rotBits(b,n,rot){
+  if(rot===0) return b;
+  const o=new Uint8Array(n*n);
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++){
+    let sr,sc;
+    if(rot===1){ sr=n-1-c; sc=r; } else if(rot===2){ sr=n-1-r; sc=n-1-c; } else { sr=c; sc=n-1-r; }
+    o[r*n+c] = b[sr*n+sc];
+  }
+  return o;
+}
+function popcount(x){ let c=0; while(x){ x &= x-1; c++; } return c; }
+function toGray(rgba, W, H){
+  const g = new Uint8ClampedArray(W*H);
+  for(let i=0,j=0;i<g.length;i++,j+=4)
+    g[i] = (rgba[j]*299 + rgba[j+1]*587 + rgba[j+2]*114)/1000;
+  return g;
+}
+</script>
+<script>
+"use strict";
+/* =========================================================================
+   BUGC2 ArUco レース シミュレータ / 本番モニタ
+   座標系: mm / 原点=左上 / x=右 / y=下（カメラ画像と同じ）
+   角度  : deg / 0=+x方向 / 正=時計回り
+   ========================================================================= */
+let FIELD = {w:1000, h:500};
+let MARKER_MM = 40;
+let DICT_NAME = '4x4_50';
+const GOAL_R = 45, WALL_HALF = 8, PHYS_HZ = 120;
+
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const rad=d=>d*Math.PI/180, deg=r=>r*180/Math.PI;
+const norm180=d=>{d=((d+180)%360+360)%360-180; return d;};
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function mulberry32(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};}
+let rnd=mulberry32(7);
+function gauss(){let u=0,v=0;while(u===0)u=rnd();while(v===0)v=rnd();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function closestOnSeg(p,a,b){const vx=b.x-a.x,vy=b.y-a.y,L2=vx*vx+vy*vy;
+  if(L2<1e-9)return{x:a.x,y:a.y};const t=clamp(((p.x-a.x)*vx+(p.y-a.y)*vy)/L2,0,1);
+  return{x:a.x+vx*t,y:a.y+vy*t};}
+const distSeg=(p,a,b)=>{const q=closestOnSeg(p,a,b);return Math.hypot(p.x-q.x,p.y-q.y);};
+const segHitsCircle=(a,b,c,r)=>distSeg(c,a,b)<=r;
+function segSeg(a,b,c,d,pad){
+  pad=pad||0;
+  const den=(b.x-a.x)*(d.y-c.y)-(b.y-a.y)*(d.x-c.x);
+  if(Math.abs(den)>1e-9){
+    const t=((c.x-a.x)*(d.y-c.y)-(c.y-a.y)*(d.x-c.x))/den;
+    const u=((c.x-a.x)*(b.y-a.y)-(c.y-a.y)*(b.x-a.x))/den;
+    if(t>=0&&t<=1&&u>=0&&u<=1)return true;
+  }
+  if(pad>0){
+    const L=Math.hypot(b.x-a.x,b.y-a.y),N=Math.max(4,Math.ceil(L/(pad*0.6)));
+    for(let i=0;i<=N;i++){
+      const p={x:a.x+(b.x-a.x)*i/N,y:a.y+(b.y-a.y)*i/N};
+      if(distSeg(p,c,d)<pad)return true;
+    }
+  }
+  return false;
+}
+const gEl=id=>document.getElementById(id);
+const MODE=()=>gEl('mode').value;
+
+function cfg(){return{
+  fw:+gEl('cFw').value, fh:+gEl('cFh').value, mk:+gEl('cMk').value, dict:gEl('cDict').value,
+  detMode:gEl('cDetMode').value,
+  fps:+gEl('cFps').value, lat:+gEl('cLat').value, np:+gEl('cNp').value, na:+gEl('cNa').value,
+  loss:+gEl('cLoss').value/100, myId:+gEl('cMyId').value,
+  maxV:+gEl('cMaxV').value, maxW:+gEl('cMaxW').value, rad:+gEl('cRad').value, lag:+gEl('cLag').value,
+  r1:gEl('cR1').checked, r3:gEl('cR3').checked, rv:+gEl('cRv').value,
+  j10:gEl('cJ10').checked, j11:gEl('cJ11').checked, jamV:+gEl('cJamV').value,
+  seed:+gEl('cSeed').value, stopHit:gEl('cStopHit').checked, speed:+gEl('speed').value
+};}
+
+/* ================= シナリオ ================= */
+function isSolvable(sc, radius){
+  const CELL=10, infl=radius+18;
+  const nx=Math.ceil(FIELD.w/CELL), ny=Math.ceil(FIELD.h/CELL);
+  const occ=new Uint8Array(nx*ny);
+  for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++){
+    const p={x:(ix+0.5)*CELL,y:(iy+0.5)*CELL};
+    let bad=(p.x<infl||p.y<infl||p.x>FIELD.w-infl||p.y>FIELD.h-infl);
+    if(!bad)for(const w of sc.walls)if(distSeg(p,w.a,w.b)<infl+WALL_HALF){bad=true;break;}
+    occ[iy*nx+ix]=bad?1:0;
+  }
+  const ci=p=>({ix:clamp(Math.floor(p.x/CELL),0,nx-1),iy:clamp(Math.floor(p.y/CELL),0,ny-1)});
+  const s0=ci(sc.start), g0=ci(sc.goal);
+  if(occ[s0.iy*nx+s0.ix]||occ[g0.iy*nx+g0.ix])return false;
+  const seen=new Uint8Array(nx*ny), q=[s0.iy*nx+s0.ix], tI=g0.iy*nx+g0.ix;
+  seen[q[0]]=1;
+  while(q.length){
+    const c=q.pop(), cx=c%nx, cy=(c-cx)/nx;
+    if(c===tI)return true;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const ax=cx+dx, ay=cy+dy;
+      if(ax<0||ay<0||ax>=nx||ay>=ny)continue;
+      const ni=ay*nx+ax;
+      if(occ[ni]||seen[ni])continue;
+      seen[ni]=1; q.push(ni);
+    }
+  }
+  return false;
+}
+function buildScenario(kind,seed){
+  rnd=mulberry32(seed);
+  const FW=FIELD.w, FH=FIELD.h, sx=FW/1000, sy=FH/500;
+  const P=(x,y)=>({x:x*sx,y:y*sy});
+  const sc={kind,seed,goal:{id:0,x:FW/2,y:FH/2},walls:[],
+    start:{x:70*sx,y:FH/2,deg:0},
+    rivals:[{id:1,x:930*sx,y:80*sy,deg:180},{id:3,x:930*sx,y:420*sy,deg:180}],
+    jammers:[]};
+  const WL=(e,a,b)=>sc.walls.push({ids:[e,e+1],a:P(a[0],a[1]),b:P(b[0],b[1])});
+  if(kind==='A'){
+    WL(30,[300,470],[370,200]);
+    WL(32,[700,40],[660,290]);
+    sc.jammers.push({id:10,path:[P(200,400),P(200,150)]});
+    sc.jammers.push({id:11,path:[P(620,420),P(850,420)]});
+  }else if(kind==='B'){
+    WL(30,[280,25],[280,300]);
+    WL(32,[430,475],[430,190]);
+    WL(34,[650,25],[650,215]);
+    sc.jammers.push({id:10,path:[P(170,120),P(170,380)]});
+    sc.jammers.push({id:11,path:[P(780,150),P(780,400)]});
+  }else{
+    const n=2+Math.floor(rnd()*3);
+    for(let i=0;i<n;i++){
+      let a,b,tries=0;
+      do{
+        const ax=220+rnd()*560, ay=60+rnd()*380, ang=rnd()*Math.PI, len=150+rnd()*230;
+        a=[ax,ay];
+        b=[clamp(ax+Math.cos(ang)*len,60,940), clamp(ay+Math.sin(ang)*len,30,470)];
+        tries++;
+      }while(tries<50&&(
+        segHitsCircle(P(a[0],a[1]),P(b[0],b[1]),sc.goal,GOAL_R+70)||
+        segHitsCircle(P(a[0],a[1]),P(b[0],b[1]),sc.start,130)||
+        sc.rivals.some(r=>segHitsCircle(P(a[0],a[1]),P(b[0],b[1]),r,130))));
+      WL(30+i*2,a,b);
+    }
+    for(let i=0;i<2;i++){
+      const y=70+rnd()*360;
+      sc.jammers.push({id:10+i,path:[P(300+rnd()*200,y),P(650+rnd()*250,clamp(y+(rnd()-0.5)*260,50,450))]});
+    }
+  }
+  return sc;
+}
+function buildScenarioSafe(kind,seed,radius){
+  let sc=buildScenario(kind,seed);
+  if(isSolvable(sc,radius))return sc;
+  if(kind!=='C'){logLine(`シナリオ ${kind} は機体半径 ${radius}mm では通れません`,'e');return sc;}
+  for(let k=1;k<=40;k++){
+    sc=buildScenario(kind,seed+k*101);
+    if(isSolvable(sc,radius)){sc.seed=seed;logLine(`通れる配置に作り直しました（試行 ${k}）`,'t');return sc;}
+  }
+  logLine('通れる配置を作れませんでした。機体半径を小さくしてください','e');
+  return sc;
+}
+
+/* ================= ワールド ================= */
+const W={sc:null,t:0,robots:[],walls:[],goal:null,collisions:0,finished:false,finishT:0,
+  running:false,detFrames:0,detLost:0,finishOrder:[],myRank:0,grid:null,
+  drag:null,hover:null,lastCmd:null,detCount:0};
+const me=()=>W.robots[0];
+const rivals=()=>W.robots.filter(r=>r.kind==='rival');
+const racers=()=>W.robots.filter(r=>r.kind==='me'||r.kind==='rival');
+
+const frameQ=[];
+let lastCamT=-1, lastDelivered=null, hitCool=0, acc=0;
+
+function resetWorld(keepLayout){
+  const c=cfg();
+  FIELD={w:c.fw,h:c.fh}; MARKER_MM=c.mk; DICT_NAME=c.dict;
+  fitCanvas();
+  const sc=(keepLayout&&W.sc)?W.sc:buildScenarioSafe(gEl('scenario').value,c.seed,c.rad);
+  W.sc=sc; W.walls=sc.walls; W.goal=sc.goal;
+  W.t=0; W.collisions=0; W.finished=false; W.finishT=0;
+  W.detFrames=0; W.detLost=0; W.finishOrder=[]; W.myRank=0; W.grid=null;
+  W.robots=[];
+  const mk=(o)=>Object.assign({v:0,w:0,cv:0,cw:0,trail:[],mileage:0,dbg:{pts:[],lines:[],texts:[]},
+    plan:null,pathLen:0,pathLen0:0,done:false},o);
+  W.robots.push(mk({id:c.myId,kind:'me',x:sc.start.x,y:sc.start.y,deg:sc.start.deg,r:c.rad,color:'#ffd400'}));
+  const on={1:c.r1,3:c.r3}, col={1:'#e5709b',3:'#8e6fd8'};
+  sc.rivals.forEach(rv=>{
+    if(!on[rv.id])return;
+    W.robots.push(mk({id:rv.id,kind:'rival',x:rv.x,y:rv.y,deg:rv.deg,r:c.rad,
+      color:col[rv.id],speedK:c.rv}));
+  });
+  const jon={10:c.j10,11:c.j11};
+  sc.jammers.forEach(j=>{
+    if(!jon[j.id])return;
+    W.robots.push(mk({id:j.id,kind:'jam',x:j.path[0].x,y:j.path[0].y,deg:0,r:c.rad*0.9,
+      color:'#ef8f3c',path:j.path,seg:1}));
+  });
+  frameQ.length=0; lastCamT=-1; lastDelivered=null; hitCool=0; acc=0;
+  compileAll(true);
+  setResult(null); renderAll(); updateStatus();
+}
+
+function truthMarkers(){
+  const out=[{id:W.goal.id,x:W.goal.x,y:W.goal.y,deg:0,kind:'goal'}];
+  for(const w of W.walls){
+    out.push({id:w.ids[0],x:w.a.x,y:w.a.y,deg:0,kind:'wall'});
+    out.push({id:w.ids[1],x:w.b.x,y:w.b.y,deg:0,kind:'wall'});
+  }
+  for(const r of W.robots)out.push({id:r.id,x:r.x,y:r.y,deg:norm180(r.deg),kind:r.kind});
+  return out;
+}
+function captureFrame(){
+  const c=cfg();
+  if(c.detMode==='real'){
+    const list=detectFromCanvas();
+    W.detCount=list.length;
+    frameQ.push({t:W.t,markers:list});
+    return;
+  }
+  const list=[];
+  for(const m of truthMarkers()){
+    W.detFrames++;
+    if(rnd()<c.loss){W.detLost++;continue;}
+    list.push({id:m.id,x:m.x+gauss()*c.np,y:m.y+gauss()*c.np,deg:norm180(m.deg+gauss()*c.na)});
+  }
+  W.detCount=list.length;
+  frameQ.push({t:W.t,markers:list});
+}
+function latestDelivered(){
+  const cut=W.t-cfg().lat/1000;
+  let f=null;
+  while(frameQ.length&&frameQ[0].t<=cut)f=frameQ.shift();
+  return f;
+}
+/* ================= 制御コード（自機・ライバル共通） ================= */
+function makeCtl(src){
+  const f=new Function('"use strict";'+src+'; return control;')();
+  if(typeof f!=='function')throw new Error('control 関数が見つかりません');
+  return f;
+}
+function makeApi(robot){
+  const isMe=(robot.kind==='me');
+  return {
+    WALL_HALF, norm180, clamp, dist, distSeg, segSeg,
+    deg:r=>r*180/Math.PI, rad:d=>d*Math.PI/180,
+    find:(markers,id)=>markers.find(m=>m.id===id)||null,
+    log:(...a)=>{
+      const last=a[a.length-1];
+      const cls=(typeof last==='string'&&(last==='e'||last==='w'||last==='g'))?a.pop():null;
+      const msg=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ');
+      if(isMe){ logLine(msg,cls); return; }
+      if(cls!=='e'&&cls!=='w')return;                 // ライバルは警告以上だけ
+      if(W.t-(robot.logT||-99)<3)return;
+      robot.logT=W.t; logLine('[ID'+robot.id+'] '+msg,cls);
+    },
+    point:(x,y,color)=>{if(typeof x==='object'){color=y;y=x.y;x=x.x;}robot.dbg.pts.push({x,y,color:color||'#ef8f3c'});},
+    line:(a,b,color)=>robot.dbg.lines.push({a:{x:a.x,y:a.y},b:{x:b.x,y:b.y},color:color||'#12894f'}),
+    text:(x,y,s)=>robot.dbg.texts.push({x,y,s:String(s)}),
+    walls:(markers)=>{
+      const map=new Map(markers.map(m=>[m.id,m])), out=[];
+      for(let e=30;e<=38;e+=2){
+        const a=map.get(e), b=map.get(e+1);
+        if(a&&b)out.push({ids:[e,e+1],a:{x:a.x,y:a.y},b:{x:b.x,y:b.y}});
+      }
+      return out;
+    },
+    obstacles:(markers)=>markers
+      .filter(m=>m.id!==robot.id&&m.id!==0&&!(m.id>=30&&m.id<=39))
+      .map(m=>({id:m.id,x:m.x,y:m.y,r:cfg().rad})),
+    segCircle:(a,b,c,r)=>segHitsCircle(a,b,c,r),
+    freeSeg:(a,b,walls,others,pad,field)=>{
+      if(field){
+        const L=Math.hypot(b.x-a.x,b.y-a.y), N=Math.max(4,Math.ceil(L/(pad*0.6)));
+        for(let i=0;i<=N;i++){
+          const p={x:a.x+(b.x-a.x)*i/N,y:a.y+(b.y-a.y)*i/N};
+          if(p.x<pad||p.y<pad||p.x>field.w-pad||p.y>field.h-pad)return false;
+        }
+      }
+      for(const w of (walls||[]))if(segSeg(a,b,w.a,w.b,pad+WALL_HALF))return false;
+      for(const o of (others||[]))if(segHitsCircle(a,b,o,(o.r||0)+pad*0.85))return false;
+      return true;
+    },
+    pathLen:(p)=>{let s=0;for(let i=1;i<p.length;i++)s+=dist(p[i-1],p[i]);return s;},
+    setPath:(p)=>{robot.plan=p.map(q=>({x:q.x,y:q.y}));
+      const L=p.reduce((s,q,i)=>i?s+dist(p[i-1],q):0,0);
+      robot.pathLen=L; if(!robot.pathLen0)robot.pathLen0=L;},
+    setGrid:(occ,nx,ny,cell)=>{if(isMe)W.grid={occ,nx,ny,cell};}
+  };
+}
+function compileAll(quiet){
+  const src=gEl('code').value;
+  let ok=true;
+  for(const r of racers()){
+    try{ r.ctl=makeCtl(src); r.api=makeApi(r); }
+    catch(e){ r.ctl=null; if(ok)logLine('コンパイルエラー: '+e.message,'e'); ok=false; }
+  }
+  if(ok&&!quiet)logLine('制御コードを適用しました（自機＋ライバル '+racers().length+' 台）','t');
+  return ok;
+}
+
+function runController(robot,markers,dt,tNow){
+  if(!robot.ctl)return null;
+  robot.dbg={pts:[],lines:[],texts:[]};
+  const obs={t:tNow,dt,myId:robot.id,field:{w:FIELD.w,h:FIELD.h},markers,
+    me:markers.find(m=>m.id===robot.id)||null,
+    goal:markers.find(m=>m.id===0)||null};
+  let out;
+  try{ out=robot.ctl(obs,robot.api); }
+  catch(e){ logLine(`ID${robot.id} 実行エラー: ${e.message}`,'e'); robot.ctl=null; pause(); return null; }
+  const c=cfg();
+  let v=0,w=0;
+  if(out&&typeof out==='object'){
+    if('left' in out||'right' in out){
+      const L=clamp(+out.left||0,-1,1), R=clamp(+out.right||0,-1,1);
+      v=(L+R)/2*c.maxV; w=(R-L)/2*c.maxW*-1;
+    }else{ v=+out.v||0; w=+out.w||0; }
+  }
+  if(!isFinite(v))v=0; if(!isFinite(w))w=0;
+  const k=(robot.kind==='rival')?(robot.speedK||1):1;
+  return {v:clamp(v*k,-c.maxV,c.maxV), w:clamp(w,-c.maxW,c.maxW)};
+}
+
+function controlTick(){
+  const f=latestDelivered();
+  if(!f)return;
+  lastDelivered=f;
+  const c=cfg();
+  for(const r of racers()){
+    if(r.done){ r.cv=0; r.cw=0; continue; }
+    const cmd=runController(r,f.markers,1/c.fps,W.t);
+    if(cmd){ r.cv=cmd.v; r.cw=cmd.w; if(r.kind==='me')W.lastCmd=cmd; }
+    else { r.cv=0; r.cw=0; }
+  }
+}
+function npcTick(dt){
+  const c=cfg();
+  for(const r of W.robots){
+    if(r.kind==='jam'){
+      const tgt=r.path[r.seg];
+      const e=norm180(deg(Math.atan2(tgt.y-r.y,tgt.x-r.x))-r.deg);
+      r.cw=clamp(e*3,-180,180);
+      r.cv=Math.abs(e)>40?0:c.jamV;
+      if(dist(r,tgt)<35)r.seg=(r.seg+1)%r.path.length;
+    }else if(r.done){
+      const home=(r.kind==='me')?W.sc.start:W.sc.rivals.find(x=>x.id===r.id);
+      if(!home||dist(r,home)<60){r.cv=0;r.cw=0;continue;}
+      const e=norm180(deg(Math.atan2(home.y-r.y,home.x-r.x))-r.deg);
+      r.cw=clamp(e*2.2,-c.maxW*0.8,c.maxW*0.8);
+      r.cv=Math.abs(e)>30?0:c.maxV*0.5;
+    }
+  }
+}
+function physics(dt){
+  const c=cfg(), a=clamp(1-c.lag,0.05,1);
+  for(const r of W.robots){
+    r.v+=(r.cv-r.v)*a; r.w+=(r.cw-r.w)*a;
+    r.deg=norm180(r.deg+r.w*dt);
+    const ox=r.x, oy=r.y;
+    r.x=clamp(r.x+Math.cos(rad(r.deg))*r.v*dt,r.r,FIELD.w-r.r);
+    r.y=clamp(r.y+Math.sin(rad(r.deg))*r.v*dt,r.r,FIELD.h-r.r);
+    r.mileage+=Math.hypot(r.x-ox,r.y-oy);
+  }
+  for(const r of W.robots)for(const w of W.walls){
+    const p=closestOnSeg(r,w.a,w.b);
+    const d=Math.hypot(r.x-p.x,r.y-p.y), lim=r.r+WALL_HALF;
+    if(d<lim){
+      const ux=(r.x-p.x)/(d||1), uy=(r.y-p.y)/(d||1);
+      r.x=p.x+ux*lim; r.y=p.y+uy*lim;
+      if(r.kind==='me')hit();
+      if(r.kind==='jam')r.seg=(r.seg+1)%r.path.length;
+    }
+  }
+  for(let i=0;i<W.robots.length;i++)for(let j=i+1;j<W.robots.length;j++){
+    const A=W.robots[i], B=W.robots[j], d=dist(A,B), lim=A.r+B.r;
+    if(d<lim&&d>1e-6){
+      const ux=(B.x-A.x)/d, uy=(B.y-A.y)/d, push=(lim-d)/2;
+      A.x-=ux*push; A.y-=uy*push; B.x+=ux*push; B.y+=uy*push;
+      if(A.kind==='me'||B.kind==='me')hit();
+    }
+  }
+  for(const r of W.robots){
+    if(r.kind==='jam'||r.done)continue;
+    if(dist(r,W.goal)>=GOAL_R)continue;
+    r.done=true; r.doneT=W.t;
+    W.finishOrder.push({id:r.id,t:W.t});
+    const rank=W.finishOrder.length;
+    if(r.kind==='me'){
+      W.finished=true; W.finishT=W.t; W.myRank=rank; setResult('goal');
+      logLine(`ゴール! ${rank}位 / ${W.t.toFixed(2)}s / 走行 ${Math.round(r.mileage)}mm / 計画 ${Math.round(r.pathLen0)}mm / 衝突 ${W.collisions}`,'g');
+      pause();
+    }else logLine(`ライバル ID${r.id} がゴール（${rank}位 / ${W.t.toFixed(2)}s）`,'w');
+  }
+  for(const r of W.robots){
+    const lp=r.trail[r.trail.length-1], step=(r.kind==='me')?2:4;
+    if(!lp||Math.hypot(r.x-lp.x,r.y-lp.y)>step)r.trail.push({x:r.x,y:r.y});
+    if(r.trail.length>20000)r.trail.shift();
+  }
+}
+function hit(){
+  if(hitCool>0)return;
+  hitCool=0.4; W.collisions++;
+  if(cfg().stopHit){setResult('crash');logLine('衝突により停止','e');pause();}
+}
+/* ================= 描画 ================= */
+const cv=gEl('cv'), ctx=cv.getContext('2d',{willReadFrequently:true});
+let S=1.2;
+function fitCanvas(){
+  if(MODE()==='prod'){
+    const dw=+gEl('pDw').value||1280;
+    const sz=(typeof srcSize==='function')?srcSize():{w:0,h:0};
+    const ar=(sz.w&&sz.h)?(sz.h/sz.w):(9/16);
+    cv.width=dw; cv.height=Math.round(dw*ar);
+  }else{
+    cv.width=1200; cv.height=Math.round(1200*FIELD.h/FIELD.w);
+    S=cv.width/FIELD.w;
+  }
+  cv.style.width=''; cv.style.height='';
+}
+const X=mx=>mx*S, Y=my=>my*S;
+
+function drawMarkerAt(c2,sc2,x,y,degv,id,size,label,labelColor){
+  const px=(size||MARKER_MM)*sc2, cell=px/6;
+  const bd=ArucoDict.bits(DICT_NAME,id);
+  c2.save();
+  c2.translate(x*sc2,y*sc2); c2.rotate(rad(degv||0));
+  c2.fillStyle='#fff'; c2.fillRect(-px/2-cell*0.6,-px/2-cell*0.6,px+cell*1.2,px+cell*1.2);
+  c2.fillStyle='#111'; c2.fillRect(-px/2,-px/2,px,px);
+  if(bd){
+    const n=bd.n, cw=px/(n+2);
+    c2.fillStyle='#fff';
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)
+      if(bd.bits[r*n+c])c2.fillRect(-px/2+(c+1)*cw,-px/2+(r+1)*cw,cw+0.4,cw+0.4);
+  }
+  c2.restore();
+  if(label!==false){
+    c2.fillStyle=labelColor||'#6b7484';
+    c2.font='700 12px ui-monospace, monospace'; c2.textAlign='center';
+    c2.fillText(String(id),x*sc2,y*sc2-px/2-7);
+  }
+}
+
+/* 物理的に見えるもの（カメラに写るもの）だけ描く。検出用オフスクリーンにも使う */
+function drawPhysical(c2,sc2,W2,H2){
+  c2.fillStyle='#fff'; c2.fillRect(0,0,W2,H2);
+  for(const w of W.walls){
+    c2.strokeStyle='#8b93a1'; c2.lineWidth=WALL_HALF*2*sc2; c2.lineCap='round';
+    c2.beginPath(); c2.moveTo(w.a.x*sc2,w.a.y*sc2); c2.lineTo(w.b.x*sc2,w.b.y*sc2); c2.stroke();
+  }
+  for(const r of W.robots){
+    c2.save(); c2.translate(r.x*sc2,r.y*sc2); c2.rotate(rad(r.deg));
+    const hw=r.r*sc2;
+    if(r.kind==='me'){ c2.fillStyle='#ffd400'; c2.strokeStyle='#a8820a'; }
+    else if(r.kind==='rival'){ c2.fillStyle=r.id===1?'#f7cfda':'#ddd3f5'; c2.strokeStyle=r.color; }
+    else { c2.fillStyle='#fbe0c8'; c2.strokeStyle=r.color; }
+    c2.lineWidth=2; c2.beginPath(); c2.rect(-hw,-hw,hw*2,hw*2); c2.fill(); c2.stroke();
+    c2.fillStyle=r.kind==='me'?'#8a6a00':r.color;
+    c2.beginPath(); c2.moveTo(hw*1.02,0); c2.lineTo(hw*0.62,-hw*0.3); c2.lineTo(hw*0.62,hw*0.3);
+    c2.closePath(); c2.fill();
+    c2.restore();
+  }
+  for(const w of W.walls){
+    drawMarkerAt(c2,sc2,w.a.x,w.a.y,0,w.ids[0],MARKER_MM*0.9,true);
+    drawMarkerAt(c2,sc2,w.b.x,w.b.y,0,w.ids[1],MARKER_MM*0.9,true);
+  }
+  drawMarkerAt(c2,sc2,W.goal.x,W.goal.y,0,0,MARKER_MM,true,'#12894f');
+  for(const r of W.robots)
+    drawMarkerAt(c2,sc2,r.x,r.y,r.deg,r.id,MARKER_MM*0.85,true,r.kind==='me'?'#8a6a00':r.color);
+}
+
+/* 描画画像から実検出（テスト環境の「本番と同じ検出器」モード） */
+let offC=null, offCtx=null;
+function detectFromCanvas(){
+  const dw=+gEl('pDw').value||1280;
+  const sc2=dw/FIELD.w, W2=dw, H2=Math.round(FIELD.h*sc2);
+  if(!offC){ offC=document.createElement('canvas'); }
+  if(offC.width!==W2||offC.height!==H2){ offC.width=W2; offC.height=H2; offCtx=offC.getContext('2d',{willReadFrequently:true}); }
+  drawPhysical(offCtx,sc2,W2,H2);
+  const g=toGray(offCtx.getImageData(0,0,W2,H2).data,W2,H2);
+  const dict=ArucoDict.get(DICT_NAME);
+  const t0=performance.now();
+  const res=detectAruco(g,W2,H2,dict,{minSide:+gEl('pMin').value,thrC:+gEl('pThr').value,maxHamming:+gEl('pHam').value});
+  gEl('pMs').textContent=(performance.now()-t0).toFixed(1)+'ms';
+  gEl('pCnt').textContent=res.length;
+  return res.map(m=>({id:m.id,x:m.cx/sc2,y:m.cy/sc2,deg:m.deg}));
+}
+
+function renderAll(){
+  if(MODE()==='prod'){ renderProd(); return; }
+  ctx.setTransform(1,0,0,1,0,0);
+  drawPhysical(ctx,S,cv.width,cv.height);
+  // グリッド
+  ctx.strokeStyle='#eceff4'; ctx.lineWidth=1;
+  for(let x=0;x<=FIELD.w;x+=100){ctx.beginPath();ctx.moveTo(X(x),0);ctx.lineTo(X(x),cv.height);ctx.stroke();}
+  for(let y=0;y<=FIELD.h;y+=100){ctx.beginPath();ctx.moveTo(0,Y(y));ctx.lineTo(cv.width,Y(y));ctx.stroke();}
+  // 占有格子
+  if(gEl('vGrid').checked&&W.grid){
+    const G=W.grid; ctx.fillStyle='rgba(192,57,43,.13)';
+    for(let iy=0;iy<G.ny;iy++)for(let ix=0;ix<G.nx;ix++)
+      if(G.occ[iy*G.nx+ix])ctx.fillRect(X(ix*G.cell),Y(iy*G.cell),G.cell*S+0.6,G.cell*S+0.6);
+  }
+  // ゴール円
+  ctx.fillStyle='rgba(18,137,79,.10)';
+  ctx.beginPath(); ctx.arc(X(W.goal.x),Y(W.goal.y),GOAL_R*S,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#12894f'; ctx.lineWidth=2; ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.arc(X(W.goal.x),Y(W.goal.y),GOAL_R*S,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+  // 計画経路
+  if(gEl('vPath').checked)for(const r of racers()){
+    if(!r.plan||r.plan.length<2)continue;
+    const isMe=r.kind==='me';
+    ctx.strokeStyle=isMe?'rgba(31,111,235,.9)':(r.id===1?'rgba(229,112,155,.65)':'rgba(142,111,216,.65)');
+    ctx.lineWidth=isMe?2:1.4; ctx.setLineDash(isMe?[7,5]:[3,4]);
+    ctx.beginPath(); ctx.moveTo(X(r.plan[0].x),Y(r.plan[0].y));
+    for(let i=1;i<r.plan.length;i++)ctx.lineTo(X(r.plan[i].x),Y(r.plan[i].y));
+    ctx.stroke(); ctx.setLineDash([]);
+    if(isMe){ctx.fillStyle='#1f6feb';
+      for(const q of r.plan){ctx.beginPath();ctx.arc(X(q.x),Y(q.y),3.2,0,Math.PI*2);ctx.fill();}}
+  }
+  // 軌跡
+  if(gEl('vTrail').checked){
+    for(const r of W.robots){
+      if(r.kind==='me'||r.trail.length<2)continue;
+      ctx.strokeStyle=r.kind==='jam'?'rgba(239,143,60,.4)':(r.id===1?'rgba(229,112,155,.6)':'rgba(142,111,216,.6)');
+      ctx.lineWidth=r.kind==='jam'?1.6:2; ctx.setLineDash(r.kind==='jam'?[4,4]:[]);
+      ctx.beginPath(); ctx.moveTo(X(r.trail[0].x),Y(r.trail[0].y));
+      for(const q of r.trail)ctx.lineTo(X(q.x),Y(q.y));
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    const T=me().trail;
+    if(T.length>1){
+      ctx.strokeStyle='#e08a00'; ctx.lineWidth=3.4; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(X(T[0].x),Y(T[0].y));
+      for(const q of T)ctx.lineTo(X(q.x),Y(q.y));
+      ctx.stroke();
+      ctx.fillStyle='#b06d00'; let a2=0;
+      for(let i=1;i<T.length;i++){
+        a2+=Math.hypot(T[i].x-T[i-1].x,T[i].y-T[i-1].y);
+        if(a2>=40){a2=0;ctx.beginPath();ctx.arc(X(T[i].x),Y(T[i].y),2.6,0,Math.PI*2);ctx.fill();}
+      }
+      ctx.strokeStyle='#b06d00'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(X(T[0].x),Y(T[0].y),7,0,Math.PI*2); ctx.stroke();
+    }
+  }
+  // 自機のデバッグ描画
+  const M=me();
+  for(const l of M.dbg.lines){
+    ctx.strokeStyle=l.color; ctx.lineWidth=2; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(X(l.a.x),Y(l.a.y)); ctx.lineTo(X(l.b.x),Y(l.b.y)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for(const p of M.dbg.pts){
+    ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(X(p.x),Y(p.y),5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1.3; ctx.stroke();
+  }
+  ctx.font='12px ui-monospace, monospace'; ctx.textAlign='left';
+  for(const t of M.dbg.texts){ctx.fillStyle='#b06d00';ctx.fillText(t.s,X(t.x)+6,Y(t.y)-6);}
+  // 検出値
+  if(gEl('vDet').checked&&lastDelivered){
+    ctx.strokeStyle='rgba(80,90,110,.6)'; ctx.lineWidth=1;
+    for(const m of lastDelivered.markers){
+      ctx.beginPath(); ctx.arc(X(m.x),Y(m.y),4,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(X(m.x),Y(m.y));
+      ctx.lineTo(X(m.x)+Math.cos(rad(m.deg))*20,Y(m.y)+Math.sin(rad(m.deg))*20); ctx.stroke();
+    }
+  }
+  drawHandles();
+  ctx.strokeStyle='#c9cfd8'; ctx.lineWidth=2; ctx.strokeRect(1,1,cv.width-2,cv.height-2);
+}
+
+/* ---- ドラッグ用ハンドル ---- */
+function handles(){
+  const hs=[];
+  for(const r of W.robots)hs.push({type:'robot',ref:r,x:r.x,y:r.y,rad:r.r});
+  for(const r of W.robots)if(r.kind==='jam')r.path.forEach((p,i)=>hs.push({type:'way',ref:r,idx:i,x:p.x,y:p.y,rad:16}));
+  W.walls.forEach(w=>{
+    hs.push({type:'wall',ref:w,end:'a',x:w.a.x,y:w.a.y,rad:MARKER_MM*0.6});
+    hs.push({type:'wall',ref:w,end:'b',x:w.b.x,y:w.b.y,rad:MARKER_MM*0.6});
+  });
+  hs.push({type:'goal',ref:W.goal,x:W.goal.x,y:W.goal.y,rad:MARKER_MM*0.6});
+  return hs;
+}
+function drawHandles(){
+  for(const r of W.robots)if(r.kind==='jam'){
+    ctx.strokeStyle='rgba(239,143,60,.75)'; ctx.lineWidth=1.4; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(X(r.path[0].x),Y(r.path[0].y)); ctx.lineTo(X(r.path[1].x),Y(r.path[1].y)); ctx.stroke();
+    ctx.setLineDash([]);
+    for(const p of r.path){
+      ctx.fillStyle='#fff'; ctx.strokeStyle='#ef8f3c'; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.arc(X(p.x),Y(p.y),5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+  }
+  if(W.hover){
+    ctx.strokeStyle='rgba(31,111,235,.85)'; ctx.lineWidth=2; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.arc(X(W.hover.x),Y(W.hover.y),Math.max(9,W.hover.rad*S),0,Math.PI*2);
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+function canvasPt(ev){
+  const r=cv.getBoundingClientRect();
+  return {x:(ev.clientX-r.left)*cv.width/r.width, y:(ev.clientY-r.top)*cv.height/r.height};
+}
+function pickHandle(p){
+  let best=null,bd=1e9;
+  for(const h of handles()){
+    const d=Math.hypot(p.x/S-h.x,p.y/S-h.y);
+    if(d<Math.max(h.rad,14)&&d<bd){bd=d;best=h;}
+  }
+  return best;
+}
+cv.addEventListener('mousedown',ev=>{
+  if(MODE()==='prod'){ prodClick(ev); return; }
+  const h=pickHandle(canvasPt(ev));
+  if(h){ W.drag=h; cv.style.cursor='grabbing'; ev.preventDefault(); }
+});
+window.addEventListener('mousemove',ev=>{
+  if(MODE()==='prod')return;
+  const p=canvasPt(ev);
+  const mm={x:clamp(Math.round(p.x/S/5)*5,0,FIELD.w),y:clamp(Math.round(p.y/S/5)*5,0,FIELD.h)};
+  if(!W.drag){
+    const h=pickHandle(p);
+    W.hover=h; cv.style.cursor=h?'grab':'default';
+    if(!W.running)renderAll();
+    return;
+  }
+  const d=W.drag;
+  if(d.type==='robot'){
+    const r=d.ref;
+    const nx=clamp(mm.x,r.r,FIELD.w-r.r), ny=clamp(mm.y,r.r,FIELD.h-r.r);
+    if(r.kind==='jam'){ const dx=nx-r.x, dy=ny-r.y; r.path.forEach(q=>{q.x+=dx;q.y+=dy;}); }
+    r.x=nx; r.y=ny; r.trail.length=0;
+    if(r.kind==='me'){ W.sc.start.x=nx; W.sc.start.y=ny; }
+    if(r.kind==='rival'){ const s=W.sc.rivals.find(z=>z.id===r.id); if(s){s.x=nx;s.y=ny;} }
+    r.plan=null;
+  }else if(d.type==='way'){
+    d.ref.path[d.idx].x=mm.x; d.ref.path[d.idx].y=mm.y;
+  }else if(d.type==='wall'){
+    d.ref[d.end].x=mm.x; d.ref[d.end].y=mm.y;
+  }else if(d.type==='goal'){
+    W.goal.x=clamp(mm.x,GOAL_R,FIELD.w-GOAL_R); W.goal.y=clamp(mm.y,GOAL_R,FIELD.h-GOAL_R);
+  }
+  W.hover={x:d.type==='robot'?d.ref.x:(d.type==='way'?d.ref.path[d.idx].x:(d.type==='goal'?W.goal.x:d.ref[d.end].x)),
+           y:d.type==='robot'?d.ref.y:(d.type==='way'?d.ref.path[d.idx].y:(d.type==='goal'?W.goal.y:d.ref[d.end].y)),
+           rad:d.rad};
+  if(!W.running)renderAll();
+});
+window.addEventListener('mouseup',()=>{ if(W.drag){W.drag=null;cv.style.cursor='grab';} });
+/* ================= 本番モード ================= */
+const PROD={ready:false,H:null,Hi:null,calibPts:[],calibMode:false,src:'cam',stream:null,
+  lastDet:[],markers:[],trail:[],lastT:0,lastPost:0,t0:0,cmd:null,offC:null,offCtx:null,err:null};
+
+/* 映像ソース（PCのカメラ / MJPEG）を1つの窓口にまとめる */
+function srcEl(){ return PROD.src==='cam' ? gEl('cam') : gEl('vid'); }
+function srcSize(){
+  const e=srcEl();
+  const w=(PROD.src==='cam')?e.videoWidth:e.naturalWidth;
+  const h=(PROD.src==='cam')?e.videoHeight:e.naturalHeight;
+  return {w:w||0,h:h||0};
+}
+function applySrcVisibility(){
+  gEl('cam').style.display=(MODE()==='prod'&&PROD.src==='cam')?'block':'none';
+  gEl('vid').style.display =(MODE()==='prod'&&PROD.src==='mjpeg')?'block':'none';
+}
+function clearCalib(why){
+  PROD.calibPts=[]; PROD.H=null; PROD.Hi=null; PROD.calibMode=false;
+  const e=gEl('pCalStat'); e.className='badge'; e.textContent=why||'未設定';
+}
+
+/* ---- このPCのカメラ ---- */
+async function camStart(){
+  const [w,h]=gEl('pCamRes').value.split('x').map(Number);
+  const dev=gEl('pCamDev').value;
+  camStop(true);
+  try{
+    const c={video:{width:{ideal:w},height:{ideal:h},frameRate:{ideal:30}}};
+    if(dev) c.video.deviceId={exact:dev};
+    PROD.stream=await navigator.mediaDevices.getUserMedia(c);
+  }catch(e){
+    PROD.ready=false; PROD.err='cam';
+    setProdStat('カメラを開けません: '+e.name,'bad');
+    logLine('カメラを開けません（'+e.name+'）。ブラウザの許可を確認してください。','e');
+    return;
+  }
+  const v=gEl('cam');
+  v.srcObject=PROD.stream;
+  await v.play().catch(()=>{});
+  await new Promise(r=>{ if(v.videoWidth) return r(); v.onloadedmetadata=()=>r(); });
+  PROD.ready=true; PROD.err=null;
+  clearCalib('未設定（カメラ変更）');
+  fitCanvas(); applySrcVisibility();
+  setProdStat('カメラ稼働 '+v.videoWidth+'x'+v.videoHeight,'ok');
+  logLine('PCのカメラを開始: '+v.videoWidth+'x'+v.videoHeight,'g');
+  // 許可後はラベルが取れるので一覧を作り直す
+  try{
+    const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    const sel=gEl('pCamDev'), cur=sel.value;
+    sel.innerHTML='<option value="">既定のカメラ</option>';
+    ds.forEach((d,i)=>{const o=document.createElement('option');
+      o.value=d.deviceId; o.textContent=d.label||('カメラ '+(i+1)); sel.appendChild(o);});
+    sel.value=cur;
+  }catch(e){}
+}
+function camStop(silent){
+  if(PROD.stream){ PROD.stream.getTracks().forEach(t=>t.stop()); PROD.stream=null; }
+  gEl('cam').srcObject=null;
+  if(!silent){ PROD.ready=false; setProdStat('未接続',''); }
+}
+
+function prodConnect(){
+  const base=gEl('pBase').value.replace(/\/+$/,''), feed=gEl('pFeed').value;
+  const url=base+feed;
+  const img=gEl('vid');
+  PROD.ready=false; PROD.err=null;
+  applySrcVisibility();
+  img.crossOrigin='anonymous';
+  img.onload=()=>{ PROD.ready=true; clearCalib('未設定（映像変更）'); fitCanvas(); setProdStat('接続中 '+img.naturalWidth+'x'+img.naturalHeight,'ok'); };
+  img.onerror=()=>{ PROD.ready=false; PROD.err='cors';
+    setProdStat('読み込み失敗（CORS/URL を確認）','bad');
+    logLine('映像を読み込めません。server.py に CORS 許可を追記するか、この HTML をサーバから配信してください。','e'); };
+  img.src=url+(url.includes('?')?'&':'?')+'t='+Math.floor(Math.random()*1e9);
+  setProdStat('接続中…','warn');
+  logLine('映像に接続: '+url,'t');
+  PROD.t0=performance.now();
+}
+function prodStop(){ gEl('vid').src=''; PROD.ready=false; setProdStat('未接続',''); }
+function setProdStat(s,k){ const e=gEl('pStat'); e.className='badge'+(k?' '+k:''); e.textContent=s; }
+
+function prodClick(ev){
+  if(!PROD.calibMode)return;
+  const p=canvasPt(ev);
+  PROD.calibPts.push(p);
+  logLine(`四隅 ${PROD.calibPts.length}/4: (${p.x|0}, ${p.y|0}) px`,'t');
+  if(PROD.calibPts.length===4){
+    const dst=[{x:0,y:0},{x:FIELD.w,y:0},{x:FIELD.w,y:FIELD.h},{x:0,y:FIELD.h}];
+    PROD.H=homography(PROD.calibPts,dst);     // px -> mm
+    PROD.Hi=homography(dst,PROD.calibPts);    // mm -> px
+    PROD.calibMode=false;
+    if(PROD.H){ gEl('pCalStat').className='badge ok'; gEl('pCalStat').textContent='設定済み';
+      logLine('キャリブレーション完了（画像→mm）','g'); }
+    else logLine('キャリブレーション失敗（4点が退化しています）','e');
+  }
+  renderAll();
+}
+function prodDetect(){
+  const el=srcEl(), sz=srcSize();
+  if(!PROD.ready||!sz.w)return;
+  const now=performance.now();
+  const minDt=1000/(+gEl('pFps').value||10);
+  if(now-PROD.lastT<minDt)return;
+  PROD.lastT=now;
+  const dw=+gEl('pDw').value||1280;
+  const W2=dw, H2=Math.round(dw*sz.h/sz.w);
+  if(!PROD.offC){PROD.offC=document.createElement('canvas');}
+  if(PROD.offC.width!==W2||PROD.offC.height!==H2){
+    PROD.offC.width=W2; PROD.offC.height=H2;
+    PROD.offCtx=PROD.offC.getContext('2d',{willReadFrequently:true});
+  }
+  PROD.offCtx.drawImage(el,0,0,W2,H2);
+  let data;
+  try{ data=PROD.offCtx.getImageData(0,0,W2,H2); }
+  catch(e){
+    PROD.err='taint'; PROD.ready=false;
+    setProdStat('ピクセルを読めません（CORS）','bad');
+    logLine(PROD.src==='cam'
+      ? '映像のピクセルを読めません。カメラを開き直してください。'
+      : '映像のピクセルを読めません（canvas taint）。server.py への CORS 追記が必要です。','e');
+    return;
+  }
+  const g=toGray(data.data,W2,H2);
+  const dict=ArucoDict.get(DICT_NAME);
+  const t0=performance.now();
+  const res=detectAruco(g,W2,H2,dict,{minSide:+gEl('pMin').value,thrC:+gEl('pThr').value,maxHamming:+gEl('pHam').value});
+  gEl('pMs').textContent=(performance.now()-t0).toFixed(1)+'ms';
+  gEl('pCnt').textContent=res.length;
+  PROD.lastDet=res.map(m=>({id:m.id,corners:m.corners.map(c=>({x:c.x*cv.width/W2,y:c.y*cv.height/H2})),
+    cx:m.cx*cv.width/W2, cy:m.cy*cv.height/H2, deg:m.deg}));
+  W.detCount=res.length;
+  // mm へ変換
+  PROD.markers=[];
+  if(PROD.H){
+    for(const m of res){
+      const c=applyH(PROD.H,m.cx,m.cy);
+      const tip=applyH(PROD.H, m.cx+Math.cos(rad(m.deg))*20, m.cy+Math.sin(rad(m.deg))*20);
+      PROD.markers.push({id:m.id,x:c.x,y:c.y,deg:norm180(deg(Math.atan2(tip.y-c.y,tip.x-c.x)))});
+    }
+  }
+  // 制御を1機ぶん回す
+  const c=cfg();
+  const M=me();
+  if(PROD.H&&M&&M.ctl&&W.running){
+    W.t=(performance.now()-PROD.t0)/1000;
+    const cmd=runController(M,PROD.markers,minDt/1000,W.t);
+    if(cmd){
+      PROD.cmd=cmd; W.lastCmd=cmd;
+      const mk=PROD.markers.find(z=>z.id===c.myId);
+      if(mk){
+        const lp=PROD.trail[PROD.trail.length-1];
+        if(!lp||Math.hypot(mk.x-lp.x,mk.y-lp.y)>3)PROD.trail.push({x:mk.x,y:mk.y});
+        if(PROD.trail.length>8000)PROD.trail.shift();
+      }
+      if(gEl('pSend').checked&&now-PROD.lastPost>1000/(+gEl('pRate').value||10)){
+        PROD.lastPost=now; sendCmd(cmd);
+      }
+    }
+  }
+}
+let cmdSeq=0;
+/* ---- BUGC2 との双方向リンク（WebSocket） ---- */
+const LINK={sock:null,open:false,rtt:null,telem:null,sentAt:new Map(),
+  retryAt:0,failed:0,warned:false};
+
+function linkConnect(){
+  const url=gEl('pWsUrl').value.trim();
+  if(!url){logLine('WebSocket の URL が空です','e');return;}
+  linkClose(true);
+  let sk;
+  try{ sk=new WebSocket(url); }
+  catch(e){ logLine('WebSocket を開けません: '+e.message,'e'); return; }
+  LINK.sock=sk;
+  setLinkStat('接続中…','warn');
+  sk.onopen=()=>{
+    LINK.open=true; LINK.failed=0; LINK.warned=false;
+    LINK.sentAt.clear(); LINK.rtt=null;
+    setLinkStat('接続 '+url,'ok');
+    logLine('BUGC2 と接続しました: '+url,'g');
+  };
+  sk.onmessage=ev=>{
+    let t; try{ t=JSON.parse(ev.data); }catch(e){ return; }
+    LINK.telem=t;
+    if(t.seq!==undefined && LINK.sentAt.has(t.seq)){
+      LINK.rtt=performance.now()-LINK.sentAt.get(t.seq);
+      LINK.sentAt.delete(t.seq);
+    }
+    if(LINK.sentAt.size>200) LINK.sentAt.clear();
+    showTelem(t);
+  };
+  sk.onerror=()=>{ setLinkStat('通信エラー','bad'); };
+  sk.onclose=()=>{
+    LINK.open=false; LINK.sock=null;
+    setLinkStat('切断','bad');
+    if(!LINK.manualClose){
+      LINK.failed++;
+      LINK.retryAt=performance.now()+1500;         // 自動で再接続する
+      if(!LINK.warned){LINK.warned=true;logLine('BUGC2 との接続が切れました。1.5秒ごとに再接続します','w');}
+    }
+    LINK.manualClose=false;
+  };
+}
+function linkClose(silent){
+  LINK.manualClose=true;
+  if(LINK.sock){ try{LINK.sock.close();}catch(e){} }
+  LINK.sock=null; LINK.open=false; LINK.retryAt=0;
+  if(!silent) setLinkStat('未接続','');
+}
+function setLinkStat(s,k){
+  const e=gEl('pWsStat'); if(!e)return;
+  e.className='badge'+(k?' '+k:''); e.textContent=s;
+}
+function showTelem(t){
+  const rtt=LINK.rtt!==null?Math.round(LINK.rtt)+'ms':'-';
+  gEl('pTelem').textContent=
+    `往復 ${rtt} / RSSI ${t.rssi??'-'}dBm / 電池 ${t.bat!==undefined?t.bat.toFixed(2)+'V':'-'} `+
+    `/ 実出力 L${(t.l??0).toFixed(2)} R${(t.r??0).toFixed(2)} / 最終指令 ${t.age??'-'}ms前 `+
+    `/ 受信 ${t.rx??'-'} (捨て ${t.drop??'-'})`;
+  gEl('sB').textContent=(t.alive===false?'停止':'稼働')+' '+rtt;
+}
+function linkTick(){
+  // 自動再接続
+  if(!LINK.open && LINK.retryAt && performance.now()>LINK.retryAt && gEl('pSend').checked
+     && gEl('pProto').value==='ws'){ LINK.retryAt=0; linkConnect(); }
+  // 300ms 以上テレメトリが来なければ「不明」
+  if(LINK.open && LINK.telem && performance.now()-(LINK.lastShow||0)>1000){ LINK.lastShow=performance.now(); }
+}
+
+function sendCmd(cmd){
+  const c=cfg();
+  // w>0 = 時計回り(右旋回) = 左輪の方が速い
+  const nv=cmd.v/c.maxV, nw=cmd.w/c.maxW;
+  const body={id:c.myId,seq:++cmdSeq,v:+cmd.v.toFixed(1),w:+cmd.w.toFixed(1),
+    left:+clamp(nv+nw,-1,1).toFixed(3),
+    right:+clamp(nv-nw,-1,1).toFixed(3),
+    t:+W.t.toFixed(2)};
+  const js=JSON.stringify(body);
+  gEl('pLast').textContent=js;
+  if(gEl('pProto').value==='ws'){
+    if(!LINK.open){ if(!LINK.retryAt) LINK.retryAt=performance.now()+300; return; }
+    LINK.sentAt.set(body.seq,performance.now());
+    try{ LINK.sock.send(js); }
+    catch(e){ if(!PROD.postWarned){PROD.postWarned=true;logLine('送信失敗: '+e.message,'w');} }
+  }else{
+    // Content-Type を text/plain にして CORS プリフライト(OPTIONS)を出さない
+    fetch(gEl('pCmdUrl').value,{method:'POST',
+      headers:{'Content-Type':'text/plain;charset=UTF-8'},body:js,mode:'cors'})
+      .catch(e=>{ if(!PROD.postWarned){PROD.postWarned=true;logLine('指令の送信に失敗: '+e.message,'w');} });
+  }
+}
+
+function renderProd(){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 検出マーカ
+  if(gEl('vDet').checked)for(const m of PROD.lastDet){
+    const isMe=(m.id===cfg().myId);
+    const col=isMe?'#ffcc00':(m.id===0?'#12b06a':(m.id>=30&&m.id<=39?'#7d8ea6':'#ff5c8a'));
+    const quad=()=>{ctx.beginPath();ctx.moveTo(m.corners[0].x,m.corners[0].y);
+      for(let i=1;i<4;i++)ctx.lineTo(m.corners[i].x,m.corners[i].y);ctx.closePath();};
+    if(isMe){ quad(); ctx.fillStyle='rgba(255,204,0,.30)'; ctx.fill(); }
+    quad(); ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.lineWidth=isMe?6:4; ctx.stroke();
+    quad(); ctx.strokeStyle=col; ctx.lineWidth=isMe?3.5:2; ctx.stroke();
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(m.corners[0].x,m.corners[0].y,4.5,0,Math.PI*2); ctx.fill();
+    ctx.font='800 16px ui-monospace, monospace'; ctx.textAlign='center';
+    ctx.strokeStyle='rgba(0,0,0,.8)'; ctx.lineWidth=3.5;
+    const ly=m.cy-(isMe?18:14);
+    ctx.strokeText(String(m.id),m.cx,ly); ctx.fillText(String(m.id),m.cx,ly);
+  }
+  const toPx=p=>{ const q=applyH(PROD.Hi,p.x,p.y); return q; };
+  if(PROD.Hi){
+    // 机の枠
+    ctx.strokeStyle='rgba(31,111,235,.8)'; ctx.lineWidth=2; ctx.setLineDash([8,5]);
+    ctx.beginPath();
+    [[0,0],[FIELD.w,0],[FIELD.w,FIELD.h],[0,FIELD.h]].forEach(([x,y],i)=>{
+      const q=toPx({x,y}); i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    // 壁（マーカペアから）
+    const api=me()&&me().api;
+    if(api){
+      const wl=api.walls(PROD.markers);
+      ctx.strokeStyle='rgba(120,130,150,.85)'; ctx.lineWidth=6;
+      for(const w of wl){ const a=toPx(w.a), b=toPx(w.b);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+    }
+    // ゴール
+    const g0=PROD.markers.find(m=>m.id===0);
+    if(g0){
+      const gp=toPx(g0), e1=toPx({x:g0.x+GOAL_R,y:g0.y});
+      const rr=Math.hypot(e1.x-gp.x,e1.y-gp.y);
+      ctx.fillStyle='rgba(18,176,106,.18)';
+      ctx.beginPath(); ctx.arc(gp.x,gp.y,rr,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#0b7f4d'; ctx.lineWidth=3; ctx.setLineDash([7,5]);
+      ctx.beginPath(); ctx.arc(gp.x,gp.y,rr,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // 軌跡
+    if(gEl('vTrail').checked&&PROD.trail.length>1){
+      ctx.strokeStyle='#ffb000'; ctx.lineWidth=3;
+      ctx.beginPath();
+      PROD.trail.forEach((p,i)=>{const q=toPx(p); i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+      ctx.stroke();
+    }
+    // 計画経路
+    const M=me();
+    if(gEl('vPath').checked&&M&&M.plan&&M.plan.length>1){
+      ctx.strokeStyle='#1f6feb'; ctx.lineWidth=2.5; ctx.setLineDash([8,5]);
+      ctx.beginPath();
+      M.plan.forEach((p,i)=>{const q=toPx(p); i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle='#1f6feb';
+      for(const p of M.plan){const q=toPx(p);ctx.beginPath();ctx.arc(q.x,q.y,3.5,0,Math.PI*2);ctx.fill();}
+    }
+    if(M)for(const p of M.dbg.pts){
+      const q=toPx(p); ctx.fillStyle=p.color;
+      ctx.beginPath(); ctx.arc(q.x,q.y,5,0,Math.PI*2); ctx.fill();
+    }
+  }
+  // キャリブ中の表示
+  if(PROD.calibMode){
+    ctx.fillStyle='rgba(31,111,235,.9)';
+    ctx.font='700 18px system-ui'; ctx.textAlign='left';
+    const names=['左上','右上','右下','左下'];
+    ctx.fillText(`机の四隅をクリック: ${names[PROD.calibPts.length]||''} (${PROD.calibPts.length}/4)`,16,30);
+    PROD.calibPts.forEach((p,i)=>{
+      ctx.strokeStyle='#1f6feb'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,9,0,Math.PI*2); ctx.stroke();
+      ctx.fillText(String(i+1),p.x+13,p.y+5);
+    });
+  }
+  if(!PROD.ready){
+    ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='600 16px system-ui'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(30,36,48,.92)';
+    ctx.fillText(PROD.err?'映像を読み込めません（本番接続タブを確認）'
+      :(PROD.src==='cam'?'「本番接続」タブで［カメラを開始］を押してください'
+                        :'「本番接続」タブで映像に接続してください'),
+      cv.width/2,cv.height/2);
+  }
+}
+/* ================= メインループ ================= */
+let raf=null,lastRT=0;
+function loop(ts){
+  raf=requestAnimationFrame(loop);
+  if(!lastRT)lastRT=ts;
+  let real=(ts-lastRT)/1000; lastRT=ts;
+  if(real>0.25)real=0.25;
+  if(MODE()==='prod'){ linkTick(); prodDetect(); renderProd(); updateStatus(); return; }
+  if(!W.running)return;
+  const c=cfg();
+  acc+=real*c.speed;
+  const dt=1/PHYS_HZ;
+  let guard=0;
+  while(acc>=dt&&guard++<500){
+    acc-=dt; W.t+=dt;
+    if(hitCool>0)hitCool-=dt;
+    if(lastCamT<0||W.t-lastCamT>=1/c.fps){lastCamT=W.t;captureFrame();}
+    controlTick(); npcTick(dt); physics(dt);
+    if(!W.running)break;
+  }
+  renderAll(); updateStatus();
+}
+function updateStatus(){
+  const prod=(MODE()==='prod');
+  const M=me();
+  gEl('sT').textContent=W.t.toFixed(2);
+  if(prod){
+    const mk=PROD.markers.find(m=>m.id===cfg().myId), g0=PROD.markers.find(m=>m.id===0);
+    gEl('sD').textContent=(mk&&g0)?Math.round(dist(mk,g0)):'-';
+    gEl('sM').textContent=Math.round(PROD.trail.reduce((s,p,i)=>i?s+dist(PROD.trail[i-1],p):0,0));
+  }else{
+    gEl('sD').textContent=Math.round(dist(M,W.goal));
+    gEl('sM').textContent=Math.round(M.mileage);
+  }
+  gEl('sP').textContent=M.pathLen?Math.round(M.pathLen):'-';
+  gEl('sC').textContent=W.collisions;
+  gEl('sK').textContent=W.myRank?W.myRank+'位':(W.finishOrder.length?'('+W.finishOrder.length+'台先着)':'-');
+  gEl('sN').textContent=W.detCount;
+  gEl('sV').textContent=W.lastCmd?`v${Math.round(W.lastCmd.v)} w${Math.round(W.lastCmd.w)}`:'-';
+}
+function setResult(kind){
+  const el=gEl('sR'); el.className='badge';
+  if(kind==='goal'){el.className=W.myRank===1?'badge ok':'badge warn';
+    el.textContent=`${W.myRank}位 ゴール ${W.finishT.toFixed(2)}s / 衝突 ${W.collisions}`;}
+  else if(kind==='crash'){el.className='badge bad';el.textContent='衝突で停止';}
+  else if(kind==='run'){el.className='badge run';el.textContent=MODE()==='prod'?'本番制御中':'走行中';}
+  else el.textContent='待機中';
+}
+function play(){
+  if(!compileAll(true))return;
+  W.running=true; lastRT=0;
+  gEl('btnPause').textContent='⏸ 一時停止';
+  if(!W.finished)setResult('run');
+}
+function pause(){ W.running=false; gEl('btnPause').textContent='▶ 再開'; }
+function start(){
+  pause();
+  if(MODE()==='prod'){
+    PROD.trail=[]; PROD.t0=performance.now(); W.t=0;
+    W.robots.forEach(r=>{r.plan=null;r.pathLen0=0;});
+    compileAll(false);
+    if(!PROD.H)logLine('先にキャリブレーション（四隅指定）をしてください','w');
+    play(); logLine('本番制御を開始しました','g');
+    return;
+  }
+  resetWorld(true);
+  logLine('スタート：現在の配置から最短経路を計画して自律走行します','t');
+  play();
+}
+const consoleEl=gEl('console');
+let logCount=0;
+function logLine(s,cls){
+  if(++logCount>400){consoleEl.textContent='';logCount=0;}
+  const d=document.createElement('div');
+  if(cls)d.className=cls;
+  d.textContent=`[${W.t.toFixed(2)}] ${s}`;
+  consoleEl.appendChild(d); consoleEl.scrollTop=consoleEl.scrollHeight;
+}
+
+/* ================= UI ================= */
+function applyMode(){
+  const prod=(MODE()==='prod');
+  document.body.classList.toggle('prod',prod);
+  document.querySelectorAll('.tOnly').forEach(e=>e.style.display=prod?'none':'');
+  pause(); fitCanvas();
+  if(prod){ applySrcVisibility(); renderProd(); } else { applySrcVisibility(); renderAll(); }
+  updateStatus();
+}
+gEl('mode').onchange=applyMode;
+gEl('btnStart').onclick=start;
+gEl('btnPause').onclick=()=>W.running?pause():play();
+gEl('btnReset').onclick=()=>{pause();
+  if(MODE()==='prod'){PROD.trail=[];W.t=0;W.robots.forEach(r=>r.plan=null);compileAll(true);renderProd();}
+  else resetWorld(true);};
+gEl('scenario').onchange=()=>{pause();resetWorld(false);};
+gEl('btnLayoutReset').onclick=()=>{pause();resetWorld(false);};
+['cSeed','cR1','cR3','cJ10','cJ11','cMyId','cRad','cFw','cFh','cMk','cDict']
+  .forEach(id=>gEl(id).onchange=()=>{pause();resetWorld(false);});
+gEl('btnApply').onclick=()=>compileAll(false);
+gEl('btnSample').onclick=()=>{gEl('code').value=gEl('sampleCode').textContent.trim();compileAll(false);};
+gEl('btnClr').onclick=()=>{consoleEl.textContent='';logCount=0;};
+gEl('btnSave').onclick=()=>{const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([gEl('code').value],{type:'text/javascript'}));
+  a.download='bugc2_control.js';a.click();};
+gEl('btnLoad').onclick=()=>gEl('fileIn').click();
+gEl('fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  const fr=new FileReader();fr.onload=()=>{gEl('code').value=fr.result;compileAll(false);};fr.readAsText(f);};
+gEl('btnShot').onclick=()=>{
+  try{ const a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='field.png'; a.click(); }
+  catch(e){ logLine('画像保存できません: '+e.message,'e'); }
+};
+gEl('btnExport').onclick=()=>{
+  const j=JSON.stringify({field:FIELD,unit:'mm',origin:'top-left',axis:'x right / y down',
+    angle:'deg, 0=+x, positive=clockwise',marker_mm:MARKER_MM,dict:DICT_NAME,
+    goal_radius_mm:GOAL_R,wall_half_thickness_mm:WALL_HALF,
+    my_marker_id:cfg().myId,goal:W.goal,walls:W.walls.map(w=>({ids:w.ids,a:w.a,b:w.b})),
+    my_start:W.sc.start,rivals:W.sc.rivals,jammers:W.sc.jammers},null,2);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([j],{type:'application/json'}));
+  a.download=`field_${W.sc.kind}_${W.sc.seed}.json`; a.click();
+};
+['vPath','vTrail','vDet','vGrid'].forEach(id=>gEl(id).onchange=()=>renderAll());
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on'); gEl(t.dataset.p).classList.add('on');
+  };
+});
+gEl('pSrc').onchange=()=>{
+  PROD.src=gEl('pSrc').value;
+  const cam=(PROD.src==='cam');
+  gEl('pCamBox').style.display=cam?'':'none';
+  gEl('pMjpegBox').style.display=cam?'none':'';
+  if(cam) prodStop(); else camStop(true);
+  PROD.ready=false; clearCalib('未設定（ソース変更）');
+  applySrcVisibility(); setProdStat('未接続','');
+};
+gEl('pCamStart').onclick=camStart;
+gEl('pCamStop').onclick=()=>camStop(false);
+gEl('pConnect').onclick=prodConnect;
+gEl('pStop').onclick=prodStop;
+gEl('pDw').onchange=()=>{if(MODE()==='prod'){fitCanvas();clearCalib('未設定（解像度変更）');}};
+gEl('pCalib').onclick=()=>{PROD.calibPts=[];PROD.calibMode=true;
+  gEl('pCalStat').className='badge warn';gEl('pCalStat').textContent='指定中…';
+  logLine('机の四隅を 左上→右上→右下→左下 の順にクリックしてください','t');};
+gEl('pCalibClear').onclick=()=>{PROD.calibPts=[];PROD.H=null;PROD.Hi=null;PROD.calibMode=false;
+  gEl('pCalStat').className='badge';gEl('pCalStat').textContent='未設定';};
+gEl('pWsConnect').onclick=linkConnect;
+gEl('pWsClose').onclick=()=>linkClose(false);
+gEl('pProto').onchange=()=>{
+  const ws=(gEl('pProto').value==='ws');
+  gEl('pWsRow').style.display=ws?'':'none';
+  gEl('pWsBtns').style.display=ws?'':'none';
+  gEl('pHttpRow').style.display=ws?'none':'';
+  if(!ws) linkClose(false);
+};
+gEl('pSend').onchange=()=>{
+  if(gEl('pSend').checked&&gEl('pProto').value==='ws'&&!LINK.open) linkConnect();
+};
+
+const PY_PATCH = `# server.py への追記（CORS 許可 + このHTMLの配信 + 指令の受け口）
+from flask import request, jsonify, send_from_directory
+import os
+
+@app.after_request
+def _cors(resp):                       # ブラウザから映像のピクセルを読むために必須
+    resp.headers['Access-Control-Allow-Origin']  = '*'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    resp.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    return resp
+
+LATEST_CMD = {}
+
+@app.route('/cmd', methods=['POST', 'OPTIONS'])
+def cmd():                             # {"id":2,"v":120,"w":-35,"left":0.6,"right":0.9,"t":1.2}
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    LATEST_CMD.update(request.get_json(force=True) or {})
+    # ここで実機へ転送する（シリアル / UDP / MQTT など）
+    # ser.write(f"{LATEST_CMD['left']:.3f},{LATEST_CMD['right']:.3f}\\n".encode())
+    return jsonify(ok=True)
+
+@app.route('/cmd', methods=['GET'])
+def cmd_get():                         # 実機側がポーリングで取りに来る用
+    return jsonify(LATEST_CMD)
+
+@app.route('/sim')
+def sim():                             # 同一オリジンで配信すれば CORS 不要
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)),
+                               'BUGC2_ArUcoシミュレータ.html')
+`;
+gEl('pyPatch').textContent=PY_PATCH;
+gEl('pCopyPy').onclick=async()=>{
+  try{await navigator.clipboard.writeText(PY_PATCH);logLine('Python をコピーしました','t');}
+  catch(e){logLine('コピー失敗: '+e.message,'e');}
+};
+gEl('pSelfTest').onclick=()=>{
+  // 描画したマーカを自分の検出器で読めるか確認
+  const before=gEl('cDetMode').value;
+  gEl('cDetMode').value='real';
+  const list=detectFromCanvas();
+  gEl('cDetMode').value=before;
+  const truth=truthMarkers();
+  const got=new Map(list.map(m=>[m.id,m]));
+  let ok=0,pe=0,de=0;
+  for(const t of truth){
+    const f=got.get(t.id); if(!f)continue;
+    ok++; pe=Math.max(pe,dist(f,t)); de=Math.max(de,Math.abs(norm180(f.deg-t.deg)));
+  }
+  logLine(`セルフテスト: ${ok}/${truth.length} 検出 / 位置誤差 max ${pe.toFixed(1)}mm / 角度誤差 max ${de.toFixed(1)}°`,
+    ok===truth.length?'g':'w');
+};
+window.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();compileAll(false);return;}
+  if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();W.running?pause():play();}
+  if(e.key==='s'||e.key==='S')start();
+  if(e.key==='r'||e.key==='R'){pause();resetWorld(true);}
+});
+gEl('code').addEventListener('keydown',e=>{
+  if(e.key==='Tab'){e.preventDefault();
+    const t=e.target,s=t.selectionStart;
+    t.value=t.value.slice(0,s)+'  '+t.value.slice(t.selectionEnd);
+    t.selectionStart=t.selectionEnd=s+2;}
+});
+
+/* ---------- 使い方 ---------- */
+gEl('docBody').innerHTML=`
+<div class="card"><h3>2つのモード</h3><div class="hint">
+ <b>テスト環境</b>… 机とマーカを描画したシミュレータ。自機 ID2 とライバル ID1 / ID3 が<b>同じ制御コード</b>で走り、妨害 ID10 / ID11 が動きます。<br>
+ <b>本番環境</b>… <code>http://192.168.100.24/video_feed</code> の実写映像を読み、<b>ブラウザ内で ArUco を検出</b>して同じ制御コードを走らせ、指令を表示／POST します。<br>
+ 切り替えは左上のセレクトです。
+</div></div>
+<div class="card"><h3>テスト環境の使い方</h3><div class="hint">
+ <span class="kbd">S</span> または ▶ スタート で走行開始。<span class="kbd">Space</span> 一時停止／再開、<span class="kbd">R</span> リセット、<span class="kbd">Ctrl+S</span> コード適用。<br>
+ <b>キャンバス上でドラッグ</b>して 自機・ライバル・妨害ロボット・妨害の往復点（白丸）・壁の端点・ゴール を動かせます（5mm刻み・スタート位置にも反映）。
+</div></div>
+<div class="card"><h3>画面の見方</h3><div class="hint">
+ <b style="color:#c99b00">黄色の四角</b> 自機 ID2 ／ <b style="color:#e5709b">ピンク</b> ライバル ID1 ／ <b style="color:#8e6fd8">紫</b> ライバル ID3 ／ <b style="color:#ef8f3c">オレンジ</b> 妨害 ID10・ID11<br>
+ <b style="color:#e08a00">太いオレンジ線</b> 自機の走行軌跡（○がスタート）／ <b style="color:#1f6feb">青の点線</b> 自機の計画経路（細い点線はライバルの計画）<br>
+ <b style="color:#c0392b">赤い点</b> 他機の予測位置 ／ <b style="color:#12894f">緑の破線円</b> ゴール ID0
+</div></div>
+<div class="card"><h3>本番環境の手順</h3><div class="hint">
+ 1. 「本番接続」タブでベースURLを確認して <b>接続</b><br>
+ 2. <b>四隅を指定する</b> → 映像上の机の四隅を 左上→右上→右下→左下 の順にクリック（これで画像→mm が決まります）<br>
+ 3. 「設定」タブで <b>机サイズ・マーカ一辺・ArUco 辞書・自機ID</b> を本番に合わせる<br>
+ 4. ▶ スタート で制御開始。指令はステータスバーに出ます。実機へ送るなら <b>送信する</b> を ON<br>
+ <b>注意</b>: ブラウザが映像のピクセルを読むには <b>CORS 許可</b>が必要です。「本番接続」タブの Python を server.py に足すか、
+ その <code>/sim</code> ルートでこの HTML を配信してください。
+</div></div>
+<div class="card"><h3>ArUco 検出について</h3><div class="hint">
+ 検出は<b>この HTML 内の自前実装</b>（外部ライブラリなし）。適応的2値化 → 輪郭 → 四角形あてはめ → 射影変換でビット読み → 辞書照合（回転4方向・ハミング補正）。<br>
+ OpenCV が生成した実マーカ画像での実測: 位置誤差 ≦1px、角度誤差 ≦1.5°、1280px幅で約 30ms。<br>
+ 辞書は <code>4x4_50 / 4x4_100 / 4x4_250 / 5x5_50 / 5x5_100 / 6x6_50 / 6x6_250 / 7x7_50 / ARUCO_ORIGINAL / ARUCO_MIP_36h12</code> を内蔵（OpenCV と同じコード表）。<br>
+ 「設定」で <b>描画画像から実検出</b> を選ぶと、テスト環境でも本番と同じ検出器を通せます（重いので確認用）。
+</div></div>
+<div class="card"><h3>制御コード API</h3><div class="hint">
+ <code>control(obs, api)</code> をカメラフレーム毎に呼びます。戻り値 <code>{v: mm/s, w: deg/s}</code> または <code>{left,right}</code>（-1〜1）。<br>
+ <b>obs</b>: <code>markers</code>（検出できたマーカのみ）/ <code>me</code> / <code>goal</code> / <code>t</code> / <code>dt</code> / <code>myId</code> / <code>field</code><br>
+ <b>api</b>: <code>walls</code> <code>obstacles</code> <code>freeSeg</code> <code>dist</code> <code>distSeg</code> <code>segSeg</code> <code>segCircle</code>
+ <code>norm180</code> <code>clamp</code> <code>deg</code> <code>rad</code> <code>find</code> <code>pathLen</code> <code>setPath</code> <code>setGrid</code>
+ <code>log</code> <code>point</code> <code>line</code> <code>text</code><br>
+ <code>control</code> の外側の変数は呼び出し間で保持され、<b>機体ごとに独立</b>します（同じコードを3台が別状態で動かせます）。
+</div></div>
+<div class="card"><h3>妨害ロボットの扱い（設計方針）</h3><div class="hint">
+ 完全回避は狙いません。<b>壁だけを通行禁止</b>にして最短経路を引き、他機は<b>接触寸前だけ禁止＋周囲を少しコスト増</b>にしています。
+ 実際にぶつかりそうな瞬間だけ TTC で減速・停止・退避するので、遠回りせずに最短でゴールを取ります。
+ 迂回の強さは <code>SOFT_COST</code> / <code>SOFT_R</code> で調整できます。
+</div></div>`;
+
+/* ---------- init ---------- */
+(function init(){
+  const ds=gEl('cDict');
+  ArucoDict.names().forEach(n=>{
+    const o=document.createElement('option'); o.value=n; o.textContent=n;
+    if(n==='4x4_50')o.selected=true; ds.appendChild(o);
+  });
+  gEl('code').value=gEl('sampleCode').textContent.trim();
+  PROD.src=gEl('pSrc').value;
+  resetWorld(false);
+  applyMode();
+  logLine('準備完了。テスト環境は ▶ スタート、本番環境は「本番接続」タブから。','t');
+  raf=requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
